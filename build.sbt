@@ -1,27 +1,41 @@
-name := "large-scale-recommendation"
+import Dependencies._
 
-version := "0.1.0"
-
-scalaVersion := "2.11.7"
-
-lazy val sparkVersion = "2.1.0"
-lazy val flinkVersion = "1.2.0"
-
-lazy val commonDependencies = Seq(
-  "org.slf4j" % "slf4j-api" % "1.7.22"
+lazy val commonSettings = Seq(
+  /**
+    * This settings is a fix for a huge project like this in coursier.
+    */
+  coursierMaxIterations := 2000,
+  /**
+    * @see Issue [https://github.com/coursier/coursier/issues/444].
+    */
+  classpathTypes += "test-jar",
+  parallelExecution in Test := false,
+  updateOptions := updateOptions.value.withCachedResolution(false).withLatestSnapshots(true),
+  classpathTypes += "test-jar",
+  scalaVersion := "2.11.11",
+  version := "0.1.0-SNAPSHOT",
+  organizationName := "MTA SZTAKI DMS",
+  organization := "hu.sztaki.ilab",
+  test in assembly := {},
+  sources in (Compile,doc) := Seq.empty,
+  publishArtifact in (Compile, packageDoc) := false,
+  publishArtifact in (Test, packageDoc) := false,
+  assemblyMergeStrategy in assembly := {
+    case x if x.endsWith("io.netty.versions.properties") => MergeStrategy.rename
+    case x if x.endsWith("log4j.properties") => MergeStrategy.rename
+    case x =>
+      val oldStrategy = (assemblyMergeStrategy in assembly).value
+      oldStrategy(x)
+  },
+  fork in Test := true,
+  javaOptions in Test := Seq(
+    s"-Dlog4j.configuration=" +
+      s"file:///${baseDirectory.value.getAbsolutePath}/src/test/resources/log4j.properties"
+  )
 )
 
-lazy val sparkDependencies = Seq(
-  "org.apache.spark" %% "spark-core" % sparkVersion,
-  "org.apache.spark" %% "spark-streaming" % sparkVersion
-)
-
-lazy val flinkDependencies = Seq(
-  "org.apache.flink" %% "flink-ml" % flinkVersion,
-  "org.apache.flink" %% "flink-scala" % flinkVersion,
-  "org.apache.flink" %% "flink-streaming-scala" % flinkVersion,
-  "org.apache.flink" %% "flink-streaming-java" % flinkVersion
-)
+lazy val sparkVersion = "2.2.0"
+lazy val flinkVersion = "1.3.0"
 
 lazy val core = (project in file("core")).
   settings(commonSettings: _*).
@@ -29,31 +43,21 @@ lazy val core = (project in file("core")).
     libraryDependencies ++= commonDependencies
   )
 
-lazy val flinkAdaptiveRecom = (project in file("flink-adaptive-recom")).
+lazy val flink = (project in file("flink-adaptive-recom")).
   dependsOn(core).
   settings(commonSettings: _*).
   settings(
     libraryDependencies ++= commonDependencies,
-    libraryDependencies ++= flinkDependencies.map(_ % "provided")
+    libraryDependencies ++= flinkDependencies
   )
 
-
-lazy val sparkAdaptiveRecom = (project in file("spark-adaptive-recom")).
+lazy val spark = (project in file("spark-adaptive-recom")).
   dependsOn(core).
   settings(commonSettings: _*).
   settings(
     libraryDependencies ++= commonDependencies,
-    libraryDependencies ++= sparkDependencies.map(_ % "provided"),
-
-    libraryDependencies += "org.apache.spark" %% "spark-mllib" % sparkVersion
-
+    libraryDependencies ++= sparkDependencies
   )
 
 lazy val root = (project in file(".")).
-  aggregate(core, flinkAdaptiveRecom, sparkAdaptiveRecom)
-
-lazy val commonSettings = Seq(
-  organization := "hu.sztaki.ilab",
-  version := "0.1.0",
-  scalaVersion := "2.11.7"
-)
+  aggregate(core, flink, spark)
