@@ -26,6 +26,10 @@ object OfflineSpark {
 
   }
 
+  /**
+    * Hash map storing the initial values and updated values separately.
+    * Used so that we can output only the updates in an online scenario.
+    */
   class UpdateSeparatedHashMap[A, B](val initial: mutable.HashMap[A, B])
     extends Serializable with mutable.Map[A, B] {
     private val updateMap = new mutable.HashMap[A, B]()
