@@ -42,7 +42,7 @@ object SparkExample {
           offlineEvery, 10, offlineAlgorithm, numFactors)
       }
 
-    updatedVectors.print()
+    updatedVectors.foreachRDD(_.foreach(println))
 
     ssc.start()
 

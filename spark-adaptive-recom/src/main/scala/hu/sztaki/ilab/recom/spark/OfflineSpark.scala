@@ -192,11 +192,7 @@ object OfflineSpark {
         var prevItemBlocks = itemBlocks
         itemBlocks = updated
           .map { case (_, itemBlock) => itemBlock }
-          // Map to Array block
-          .map { case (pId, map) => (pId, map.toArray) }
           .partitionBy(shiftedPartitioner(i))
-          // Array block to Map
-          .map { case (pId, array) => (pId, customMapInit(array.iterator)) }
           .cache()
         prevItemBlocks.unpersist()
       }
