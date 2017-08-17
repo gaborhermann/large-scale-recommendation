@@ -32,14 +32,25 @@ extends Serializable {
   def queryVectors = Q
   def probeVectors = P
 
-  def ?(query: List[QI], k: Int = 10, threshold: Double = 0.5) = {
-    val snapshotP = P.get.repartition(nPartitions).cache()
-    Q.get.collect() foreach println
-    val snapshotQ = Q.get.filter(q => query.contains(q._1)).cache()
+  def ?(queries: DStream[QI], k: Int = 10,
+        threshold: Double = 0.5): DStream[(QI, Seq[(PI, Double)])] = {
+    queries.transform {
+      dd =>
+        val effectiveQ = Q.get.join(dd.map((_, null))).map(q => (q._1, q._2._1))
+        this ? (effectiveQ, k, threshold)
+    }
+  }
 
+  def ?(query: List[QI], k: Int, threshold: Double): Array[(QI, Seq[(PI, Double)])] = {
+    this ? (Q.get.filter(q => query.contains(q._1)).cache(), k, threshold)
+  }.collect()
+
+  protected def ?(snapshotQ: RDD[(QI, Array[Double])],
+                  k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = {
+    val snapshotP = P.get.repartition(nPartitions).cache()
     if (snapshotQ.count() == 0) {
       println(s"Queries specified was not found!")
-      Array.empty[(QI , Seq[(PI, Double)])]
+      snapshotP.context.emptyRDD[(QI , Seq[(PI, Double)])]
     } else {
       snapshotP
         .map {
@@ -53,42 +64,42 @@ extends Serializable {
           * Creating buckets on `P`.
           */
         .mapPartitions {
-          partition =>
-            Scalaz.unfold(partition) {
-              iterator =>
-                if (iterator.hasNext) {
-                  val first = iterator.next
-                  val maximal = first._3
-                  var nElements = 1
-                  val bucket = Some(
-                    (List(first) ++ iterator.takeWhile {
-                      case (_, _, length, _) =>
-                        val expression =
-                          (length > maximal * 0.9 && nElements < bucketUpperBound) ||
-                            nElements < bucketLowerBound
-                        nElements += 1
-                        expression
-                    }).zipWithIndex.map(
-                      r =>
-                        Bucket.Entry(
-                          r._1._1, r._2, r._1._2, r._1._3, r._1._4
-                        )
-                    ) -> iterator
-                  )
-                  println(s"Created bucket with size [$nElements].")
-                  bucket
-                } else {
-                  None
-                }
-            }.iterator
-        }
+        partition =>
+          Scalaz.unfold(partition) {
+            iterator =>
+              if (iterator.hasNext) {
+                val first = iterator.next
+                val maximal = first._3
+                var nElements = 1
+                val bucket = Some(
+                  (List(first) ++ iterator.takeWhile {
+                    case (_, _, length, _) =>
+                      val expression =
+                        (length > maximal * 0.9 && nElements < bucketUpperBound) ||
+                          nElements < bucketLowerBound
+                      nElements += 1
+                      expression
+                  }).zipWithIndex.map(
+                    r =>
+                      Bucket.Entry(
+                        r._1._1, r._2, r._1._2, r._1._3, r._1._4
+                      )
+                  ) -> iterator
+                )
+                println(s"Created bucket with size [$nElements].")
+                bucket
+              } else {
+                None
+              }
+          }.iterator
+      }
         /**
           * Search phase.
           */
         .map {
-          bucket =>
-            (null, bucket)
-        }
+        bucket =>
+          (null, bucket)
+      }
         /**
           * @todo Before this, the buckets should be cached.
           */
@@ -97,19 +108,19 @@ extends Serializable {
           * Compute local threashold.
           */
         .map {
-          case (_, (bucket: List[Bucket.Entry[PI]], (j, q))) =>
-            val bucketLength = bucket.head.length
-            val queryLength: Length = Math.sqrt(q.map(v => Math.pow(v, v)).sum)
-            val localThreshold = threshold / (bucketLength * queryLength)
-            ((j, q, localThreshold), bucket)
-        }
+        case (_, (bucket: List[Bucket.Entry[PI]], (j, q))) =>
+          val bucketLength = bucket.head.length
+          val queryLength: Length = Math.sqrt(q.map(v => Math.pow(v, v)).sum)
+          val localThreshold = threshold / (bucketLength * queryLength)
+          ((j, q, localThreshold), bucket)
+      }
         /**
           * Prune buckets based on local threshold.
           */
         .filter {
-          case (((_, _, localThreshold), _)) =>
-            localThreshold <= 1
-        }
+        case (((_, _, localThreshold), _)) =>
+          localThreshold <= 1
+      }
         .flatMap {
           case (((j, q, localThreshold), bucket)) =>
             val candidates = if (localThreshold == 1) {
@@ -141,7 +152,6 @@ extends Serializable {
           group =>
             group._1 -> group._2.toSeq.sortBy(-_._3).take(k).map(x => x._2 -> x._3)
         }
-        .collect()
     }
   }
 
