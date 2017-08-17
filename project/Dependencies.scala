@@ -6,7 +6,10 @@ object Dependencies {
   lazy val flinkVersion = "1.3.0"
 
   lazy val commonDependencies = Seq(
-    "org.slf4j" % "slf4j-api" % "1.7.22"
+    "org.slf4j" % "slf4j-api" % "1.7.22",
+    "org.scalaz" %% "scalaz-core" % "7.2.14",
+    "org.scalactic" %% "scalactic" % "3.0.1",
+    "org.scalatest" %% "scalatest" % "3.0.1" % "test"
   )
 
   lazy val flinkDependencies = Seq(

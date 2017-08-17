@@ -1,16 +1,17 @@
 package hu.sztaki.ilab.recom.spark
 
+import java.util.Random
+
 import hu.sztaki.ilab.recom.core.{PseudoRandomFactorInitializerDescriptor, Rating, SGDUpdater}
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.dstream.DStream
 import org.apache.spark.streaming.{Milliseconds, StreamingContext}
 
 import scala.collection.mutable
+import scala.util
 
 object SparkExample {
-
   def main(args: Array[String]): Unit = {
-
     val numFactors = 4
     val batchDuration = 5000
     val offlineEvery = -1 // -1 means no batch training, only online
@@ -25,20 +26,22 @@ object SparkExample {
     val batch2 = sc.makeRDD(data.slice(20, 30))
     val batch3 = sc.makeRDD(data.drop(30))
 
-    val ratings: DStream[Rating] = ssc.queueStream(
+    val ratings: DStream[Rating[Int, Int]] = ssc.queueStream(
       mutable.Queue(batch1, batch2, batch3).map(_.map(Rating.fromTuple)),
       oneAtATime = true)
 
-    val factorInit = PseudoRandomFactorInitializerDescriptor(numFactors)
+    val factorInit = PseudoRandomFactorInitializerDescriptor[Int](numFactors)
     val factorUpdate = new SGDUpdater(0.01)
+
+    val model = new Online(ratings)()
 
     val updatedVectors =
       if (offlineEvery == -1) {
-        new OnlineSpark().buildModelWithMap(mutable.HashMap.empty)(
-          ratings, factorInit, factorUpdate, Map(), checkpointEvery)
+        model.buildModelWithMap(
+          ratings, factorInit, factorInit, factorUpdate, Map(), checkpointEvery)
       } else {
-        new OnlineSpark().buildModelCombineOffline(mutable.HashMap.empty)(
-          ratings, factorInit, factorUpdate, Map(), checkpointEvery,
+        model.buildModelCombineOffline(
+          ratings, factorInit, factorInit, factorUpdate, Map(), checkpointEvery,
           offlineEvery, 10, offlineAlgorithm, numFactors)
       }
 
@@ -46,7 +49,16 @@ object SparkExample {
 
     ssc.start()
 
-    Thread.sleep(40000)
+    Thread.sleep(30000)
+
+    val user = data(util.Random.nextInt(data.size))
+    val items = model ? (List(user).map(_._1), 5, 0.001)
+    items.flatMap {
+        _._2
+    }.foreach {
+      r =>
+        println(r._1 + "-" + r._2)
+    }
 
     ssc.stop()
   }
