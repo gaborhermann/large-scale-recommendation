@@ -417,7 +417,7 @@ object Online {
       normalized: Array[Double]
     )
   }
-  sealed trait PossiblyCheckpointedRDD[A] {
+  sealed trait PossiblyCheckpointedRDD[A] extends Serializable {
     def get: RDD[A]
   }
 
@@ -429,30 +429,6 @@ object Online {
   case class NotCheckpointedRDD[A](rdd: RDD[A])(implicit classTag: ClassTag[A])
     extends PossiblyCheckpointedRDD[A] {
     def get: RDD[A] = rdd
-  }
-
-  def main(args: Array[String]): Unit = {
-
-    val conf = new SparkConf().setMaster("local[4]").setAppName("online")
-    val ssc = new StreamingContext(conf, Seconds(1))
-
-    val q = mutable.Queue(10, 20, 30)
-      .map(x => ssc.sparkContext.makeRDD(x to x + 3, numSlices = 4))
-    val xs = ssc.queueStream(q, oneAtATime = true)
-
-    val s0 = ssc.sparkContext.makeRDD(Seq(-1, -2))
-
-    def p(sRDD: RDD[Int], xRDD: RDD[Int]): RDD[Int] = {
-      sRDD.union(xRDD)
-    }
-
-    val stateDStream = dstreamFold[Int, Int](xs)(s0, p)
-    stateDStream.print()
-
-    ssc.start()
-
-    Thread.sleep(5000)
-
   }
 
   def dstreamFold[S, A](xs: DStream[A])
