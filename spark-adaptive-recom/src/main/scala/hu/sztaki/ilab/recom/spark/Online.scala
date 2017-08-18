@@ -55,6 +55,7 @@ extends Serializable {
       println(s"Queries specified were not found!")
       snapshotP.context.emptyRDD[(QI, Seq[(PI, Double)])]
     } else {
+      println(s"Found queries in this micro-batch.")
       snapshotP
         .map {
           case (i, p) =>
