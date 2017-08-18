@@ -28,6 +28,7 @@ extends Serializable {
 
   @transient protected var Q: PossiblyCheckpointedRDD[Vector[QI]] = _
   @transient protected var P: PossiblyCheckpointedRDD[Vector[PI]] = _
+  @transient protected val ssc = ratings.context
 
   def queryVectors = Q
   def probeVectors = P
@@ -117,7 +118,7 @@ extends Serializable {
           /**
             * Prune buckets based on local threshold.
             */
-          .filter {
+        .filter {
           case (((_, _, localThreshold), _)) =>
             localThreshold <= 1
         }
@@ -198,8 +199,6 @@ extends Serializable {
                                offlineAlgorithm: String,
                                numFactors: Int):
   DStream[Either[UserVectorUpdate, ItemVectorUpdate]] = {
-    @transient val ssc = ratings.context
-
     @transient val users0: PossiblyCheckpointedRDD[Vector[QI]] =
       NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq()))
     @transient val items0: PossiblyCheckpointedRDD[Vector[PI]] =
@@ -338,8 +337,6 @@ extends Serializable {
                         parameters: Map[String, String],
                         checkpointEvery: Int)
   : DStream[Either[Vector[QI], Vector[PI]]] = {
-    @transient val ssc = ratings.context
-
     @transient val users0: PossiblyCheckpointedRDD[Vector[QI]] =
       NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq.empty[Vector[QI]]))
     @transient val items0: PossiblyCheckpointedRDD[Vector[PI]] =

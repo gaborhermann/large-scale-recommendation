@@ -69,6 +69,7 @@ class suiteOnline extends FunSuite {
     val conf = new SparkConf()
       .setAppName("Basic online Spark test").setMaster("local[10]")
     val ssc = new StreamingContext(conf, Milliseconds(batchDuration))
+    ssc.checkpoint("/tmp")
     val sc = ssc.sparkContext
 
     val batches = sc.makeRDD(data.take(25)) ::
