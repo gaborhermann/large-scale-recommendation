@@ -37,8 +37,10 @@ extends Serializable {
         threshold: Double = 0.5): DStream[(QI, Seq[(PI, Double)])] = {
     queries.transform {
       dd =>
-        val effectiveQ = Q.get.join(dd.map((_, null))).map(q => (q._1, q._2._1))
-        this ? (effectiveQ, k, threshold)
+        val effectiveQ = Q.get.join(
+          dd.map(q => (q, null))
+        ).map(q => (q._1, q._2._1))
+        this ? (effectiveQ.cache(), k, threshold)
     }
   }
 
@@ -49,9 +51,9 @@ extends Serializable {
   protected def ?(snapshotQ: RDD[(QI, Array[Double])],
                   k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = {
     val snapshotP = P.get.repartition(nPartitions).cache()
-    if (snapshotQ.count() == 0) {
-      println(s"Queries specified was not found!")
-      snapshotP.context.emptyRDD[(QI , Seq[(PI, Double)])]
+    if (snapshotQ.isEmpty()) {
+      println(s"Queries specified were not found!")
+      snapshotP.context.emptyRDD[(QI, Seq[(PI, Double)])]
     } else {
       snapshotP
         .map {

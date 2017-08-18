@@ -60,7 +60,8 @@ class suiteOnline extends FunSuite {
   }
 
   test("Basic online Spark test with query stream.") {
-    val data = for (user <- 1 to 100; item <- 1 to (101 - user)) yield (user, item, 5.0)
+    val data = for (user <- 1 to 100; item <- 1 to (101 - user))
+               yield (user.toString, item.toString, 5.0)
 
     val nFactors = 4
     val batchDuration = 5000
@@ -76,12 +77,12 @@ class suiteOnline extends FunSuite {
       sc.makeRDD(data.slice(25, 75)) ::
       sc.makeRDD(data.drop(75)) :: Nil
 
-    val ratings: DStream[Rating[Int, Int]] = ssc.queueStream(
-      (mutable.Queue() ++ batches).map(_.map(r => Rating.fromTuple[Int, Int](r))),
+    val ratings: DStream[Rating[String, String]] = ssc.queueStream(
+      (mutable.Queue() ++ batches).map(_.map(r => Rating.fromTuple[String, String](r))),
       oneAtATime = true
     )
 
-    val factorInit = PseudoRandomFactorInitializerDescriptor[Int](nFactors)
+    val factorInit = PseudoRandomFactorInitializerDescriptor[String](nFactors)
     val factorUpdate = new SGDUpdater(0.01)
 
     val model = new Online(ratings)()
@@ -92,7 +93,7 @@ class suiteOnline extends FunSuite {
 
     updatedVectors.foreachRDD(_.foreach(println))
 
-    val queryQueue = mutable.Queue[RDD[Int]]()
+    val queryQueue = mutable.Queue[RDD[String]]()
     val queries = ssc.queueStream(
       queryQueue,
       oneAtATime = true
@@ -104,7 +105,7 @@ class suiteOnline extends FunSuite {
 
     Thread.sleep(30000)
 
-    val user = 100
+    val user = 100.toString
     queryQueue += (sc.makeRDD(Seq(user)))
 
     Thread.sleep(30000)
