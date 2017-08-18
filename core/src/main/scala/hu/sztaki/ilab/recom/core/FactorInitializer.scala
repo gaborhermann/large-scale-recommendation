@@ -21,14 +21,14 @@ object FactorInitializerDescriptor {
 
 class RandomFactorInitializer[I](random: Random, numFactors: Int)
   extends FactorInitializer[I] {
-  override def nextFactor(id: I): Array[Double] = {
+  override def nextFactor(ID: I): Array[Double] = {
     Array.fill(numFactors)(random.nextDouble)
   }
 }
 
 class PseudoRandomFactorInitializer[I](numFactors: Int)
   extends FactorInitializer[I] {
-  override def nextFactor(id: I): Array[Double] = {
+  override def nextFactor(ID: I): Array[Double] = {
     val random = new Random()
     Array.fill(numFactors)(random.nextDouble)
   }
@@ -38,12 +38,12 @@ case class RandomFactorInitializerDescriptor[I](numFactors: Int)
   extends FactorInitializerDescriptor[I] {
 
   override def open(): FactorInitializer[I] =
-    new RandomFactorInitializer(scala.util.Random, numFactors)
+    new RandomFactorInitializer[I](scala.util.Random, numFactors)
 }
 
 case class PseudoRandomFactorInitializerDescriptor[I](numFactors: Int)
   extends FactorInitializerDescriptor[I] {
 
   override def open(): FactorInitializer[I] =
-    new PseudoRandomFactorInitializer(numFactors)
+    new PseudoRandomFactorInitializer[I](numFactors)
 }
