@@ -338,11 +338,11 @@ extends Serializable {
                         parameters: Map[String, String],
                         checkpointEvery: Int)
   : DStream[Either[Vector[QI], Vector[PI]]] = {
-    val ssc = ratings.context
+    @transient val ssc = ratings.context
 
-    val users0: PossiblyCheckpointedRDD[Vector[QI]] =
+    @transient val users0: PossiblyCheckpointedRDD[Vector[QI]] =
       NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq.empty[Vector[QI]]))
-    val items0: PossiblyCheckpointedRDD[Vector[PI]] =
+    @transient val items0: PossiblyCheckpointedRDD[Vector[PI]] =
       NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq.empty[Vector[PI]]))
 
     Q = users0
