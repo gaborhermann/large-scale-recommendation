@@ -18,7 +18,7 @@ package object core {
   import org.slf4j.LoggerFactory
 
   trait Logger {
-    @transient private val logger = com.typesafe.scalalogging.Logger(LoggerFactory.getLogger(
+    private val logger = com.typesafe.scalalogging.Logger(LoggerFactory.getLogger(
       this.getClass.getName.stripSuffix("$")
     ))
 
