@@ -1,20 +1,15 @@
 package hu.sztaki.ilab.recom.spark
 
-import hu.sztaki.ilab.recom.spark.Online.{LocallyCheckpointedRDD, NotCheckpointedRDD, PossiblyCheckpointedRDD}
-import org.apache.spark._
-import org.apache.spark.mllib.recommendation.ALS
+import hu.sztaki.ilab.recom.core.{FactorInitializerDescriptor, FactorUpdater, _}
+import hu.sztaki.ilab.recom.spark.OfflineSpark.Vector
+import hu.sztaki.ilab.recom.spark.Online.{LocallyCheckpointedRDD, NotCheckpointedRDD, PossiblyCheckpointedRDD, _}
 import org.apache.spark.rdd._
 import org.apache.spark.storage.StorageLevel
-import org.apache.spark.streaming._
 import org.apache.spark.streaming.dstream._
-import hu.sztaki.ilab.recom.core._
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
 import scalaz.Scalaz
-import Online._
-import hu.sztaki.ilab.recom.core.{FactorInitializerDescriptor, FactorUpdater}
-import OfflineSpark.Vector
 
 class Online[QI: ClassTag, PI: ClassTag](
   @transient protected val ratings: DStream[Rating[QI, PI]])(
@@ -22,7 +17,7 @@ class Online[QI: ClassTag, PI: ClassTag](
   bucketUpperBound: Int = 1000,
   nPartitions: Int = 20,
   mapInitializer: mutable.Map[Int, Array[Double]] = mutable.HashMap.empty)
-extends Serializable {
+extends Logger with Serializable {
   case class UserVectorUpdate(ID: QI, vec: Array[Double])
   case class ItemVectorUpdate(ID: PI, vec: Array[Double])
 
@@ -52,10 +47,10 @@ extends Serializable {
                   k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = {
     val snapshotP = P.get.repartition(nPartitions).cache()
     if (snapshotQ.isEmpty()) {
-      println(s"Queries specified were not found!")
+      logDebug(s"Queries supplied were not found in [Q].")
       snapshotP.context.emptyRDD[(QI, Seq[(PI, Double)])]
     } else {
-      println(s"Found queries in this micro-batch.")
+      logDebug(s"Matching queries from [Q].")
       snapshotP
         .map {
           case (i, p) =>
@@ -69,6 +64,7 @@ extends Serializable {
           */
         .mapPartitions {
           partition =>
+            logDebug(s"Creating bucket for partition.")
             Scalaz.unfold(partition) {
               iterator =>
                 if (iterator.hasNext) {
@@ -90,9 +86,10 @@ extends Serializable {
                         )
                     ) -> iterator
                   )
-                  println(s"Created bucket with size [$nElements].")
+                  logDebug(s"Created bucket with size [$nElements].")
                   bucket
                 } else {
+                  logWarning(s"Partition is empty!")
                   None
                 }
             }.iterator
@@ -109,11 +106,12 @@ extends Serializable {
           */
         .join(snapshotQ.map((null, _)))
         /**
-          * Compute local threashold.
+          * Compute local threshold.
           */
         .map {
           case (_, (bucket: List[Bucket.Entry[PI]], (j, q))) =>
             val bucketLength = bucket.head.length
+            logDebug(s"Computing local threshold for bucket with length [$bucketLength].")
             val queryLength: Length = Math.sqrt(q.map(v => Math.pow(v, v)).sum)
             val localThreshold = threshold / (bucketLength * queryLength)
             ((j, q, localThreshold), bucket)
@@ -166,6 +164,7 @@ extends Serializable {
     q: Array[Double],
     bucket: List[Bucket.Entry[PI]],
     threshold: Double): List[Bucket.Entry[PI]] = {
+    logTrace("Cosine similarity pruning.")
     /**
       * @todo Precompute.
       */
@@ -180,6 +179,7 @@ extends Serializable {
   private def innerProductPruning(q: Array[Double],
                                   bucket: List[Bucket.Entry[PI]],
                                   threshold: Double): List[(PI, Double)] = {
+    logTrace("Inner product pruning.")
     bucket.flatMap {
       entry =>
         val product = entry.vector.zip(q).map(p => p._1 * p._2).sum

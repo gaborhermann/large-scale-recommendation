@@ -8,6 +8,7 @@ object Dependencies {
   lazy val commonDependencies = Seq(
     "org.slf4j" % "slf4j-api" % "1.7.22",
     "org.scalaz" %% "scalaz-core" % "7.2.14",
+    "com.typesafe.scala-logging" %% "scala-logging" % "3.4.0",
     "org.scalactic" %% "scalactic" % "3.0.1",
     "org.scalatest" %% "scalatest" % "3.0.1" % "test"
   )

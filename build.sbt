@@ -58,6 +58,3 @@ lazy val spark = (project in file("spark-adaptive-recom")).
     libraryDependencies ++= commonDependencies,
     libraryDependencies ++= sparkDependencies
   )
-
-lazy val root = (project in file(".")).
-  aggregate(core, flink, spark)
