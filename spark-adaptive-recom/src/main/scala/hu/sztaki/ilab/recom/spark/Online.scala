@@ -51,6 +51,7 @@ extends Logger with Serializable {
       snapshotP.context.emptyRDD[(QI, Seq[(PI, Double)])]
     } else {
       logDebug(s"Matching queries from [Q].")
+      logDebug(s"Snapshot [P] size is ${snapshotP.count()}.")
       snapshotP
         .map {
           case (i, p) =>
