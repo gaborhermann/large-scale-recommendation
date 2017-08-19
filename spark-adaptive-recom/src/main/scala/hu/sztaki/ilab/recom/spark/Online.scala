@@ -54,6 +54,7 @@ extends Logger with Serializable {
       snapshotP
         .map {
           case (i, p) =>
+            logDebug(s"Calculating length and normalizing probe vector.")
             val length: Length = Math.sqrt(p.map(v => Math.pow(v, v)).sum)
             val normalized = p.map(_ / length)
             (i, p, length, normalized)
