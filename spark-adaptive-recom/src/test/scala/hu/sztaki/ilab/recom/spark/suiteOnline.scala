@@ -23,9 +23,7 @@ class suiteOnline extends FunSuite {
     val ssc = new StreamingContext(conf, Milliseconds(batchDuration))
     val sc = ssc.sparkContext
 
-    val batches = sc.makeRDD(data.take(25)) ::
-      sc.makeRDD(data.slice(25, 75)) ::
-      sc.makeRDD(data.drop(75)) :: Nil
+    val batches = data.sliding(2000, 2000).map(slice => sc.makeRDD(slice))
 
     val ratings: DStream[Rating[Int, Int]] = ssc.queueStream(
       (mutable.Queue() ++ batches).map(_.map(r => Rating.fromTuple[Int, Int](r))),
@@ -73,9 +71,7 @@ class suiteOnline extends FunSuite {
     ssc.checkpoint("/tmp")
     val sc = ssc.sparkContext
 
-    val batches = sc.makeRDD(data.take(25)) ::
-      sc.makeRDD(data.slice(25, 75)) ::
-      sc.makeRDD(data.drop(75)) :: Nil
+    val batches = data.sliding(2000, 2000).map(slice => sc.makeRDD(slice))
 
     val ratings: DStream[Rating[String, String]] = ssc.queueStream(
       (mutable.Queue() ++ batches).map(_.map(r => Rating.fromTuple[String, String](r))),
