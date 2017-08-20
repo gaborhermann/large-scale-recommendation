@@ -94,8 +94,9 @@ class suiteOnline extends FunSuite {
       queryQueue,
       oneAtATime = true
     )
-    val recommendations = model ? (queries, 5, 0.001)
-    recommendations.print()
+    (model ? (queries, 5, 0.001))
+      .join(queries.map((_, null)))
+      .print()
 
     ssc.start()
 

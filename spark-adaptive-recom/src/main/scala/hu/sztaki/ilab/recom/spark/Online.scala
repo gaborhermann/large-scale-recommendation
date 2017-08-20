@@ -35,9 +35,7 @@ extends Logger with Serializable {
         val effectiveQ = Q.get.join(
           dd.map(q => (q, null))
         ).map(q => (q._1, q._2._1))
-        val recommendations = (this ? (effectiveQ.cache(), k, threshold)).cache()
-        recommendations.count()
-        recommendations
+        this ? (effectiveQ, k, threshold)
     }
   }
 
@@ -47,123 +45,111 @@ extends Logger with Serializable {
 
   protected def ?(snapshotQ: RDD[(QI, Array[Double])],
                   k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = {
-    val snapshotP = P.get.repartition(nPartitions).cache()
-    if (snapshotQ.isEmpty()) {
-      logDebug(s"Queries supplied were not found in [Q].")
-      snapshotP.context.emptyRDD[(QI, Seq[(PI, Double)])]
-    } else {
-      logDebug(s"Matching queries from [Q].")
-      logDebug(s"Snapshot [P] size is ${snapshotP.count()}.")
-      val sorted = snapshotP
-        .map {
-          case (i, p) =>
-            logDebug(s"Calculating length and normalizing probe vector.")
-            val length: Double = Math.sqrt(p.map(v => Math.pow(v, v)).sum)
-            val normalized = p.map(_ / length)
-            (i, p, length, normalized)
-        }
-        .sortBy(-_._3)
-        .cache()
-
-      logDebug(s"Size of sorted data is [${sorted.count()}].")
-
-      sorted
+    P.get
+      .repartition(nPartitions)
+      .map {
+        case (i, p) =>
+          logDebug(s"Calculating length and normalizing probe vector.")
+          val length: Double = Math.sqrt(p.map(v => Math.pow(v, v)).sum)
+          val normalized = p.map(_ / length)
+          (i, p, length, normalized)
+      }
+      .sortBy(-_._3)
+      /**
+        * Creating buckets on `P`.
+        */
+      .mapPartitions {
+        partition =>
+          logDebug(s"Creating bucket for partition.")
+          Scalaz.unfold(partition) {
+            iterator =>
+              if (iterator.hasNext) {
+                val first = iterator.next
+                val maximal = first._3
+                var nElements = 1
+                val bucket = Some(
+                  (List(first) ++ iterator.takeWhile {
+                    case (_, _, length, _) =>
+                      val expression =
+                        (length > maximal * 0.9 && nElements < bucketUpperBound) ||
+                          nElements < bucketLowerBound
+                      nElements += 1
+                      expression
+                  }).zipWithIndex.map(
+                    r =>
+                      Bucket.Entry(
+                        r._1._1, r._2, r._1._2, r._1._3, r._1._4
+                      )
+                  ) -> iterator
+                )
+                logDebug(s"Created bucket with size [$nElements].")
+                bucket
+              } else {
+                logWarning(s"Partition is empty!")
+                None
+              }
+          }.iterator
+      }
+      /**
+        * Search phase.
+        */
+      .map {
+        bucket =>
+          (null, bucket)
+      }
+      /**
+        * @todo Before this, the buckets should be cached.
+        */
+      .join(snapshotQ.map((null, _)))
+      /**
+        * Compute local threshold.
+        */
+      .map {
+        case (_, (bucket: List[Bucket.Entry[PI]], (j, q))) =>
+          val bucketLength = bucket.head.length
+          logDebug(s"Computing local threshold for bucket with length [$bucketLength].")
+          val queryLength: Length = Math.sqrt(q.map(v => Math.pow(v, v)).sum)
+          val localThreshold = threshold / (bucketLength * queryLength)
+          ((j, q, localThreshold), bucket)
+      }
         /**
-          * Creating buckets on `P`.
+          * Prune buckets based on local threshold.
           */
-        .mapPartitions {
-          partition =>
-            logDebug(s"Creating bucket for partition.")
-            Scalaz.unfold(partition) {
-              iterator =>
-                if (iterator.hasNext) {
-                  val first = iterator.next
-                  val maximal = first._3
-                  var nElements = 1
-                  val bucket = Some(
-                    (List(first) ++ iterator.takeWhile {
-                      case (_, _, length, _) =>
-                        val expression =
-                          (length > maximal * 0.9 && nElements < bucketUpperBound) ||
-                            nElements < bucketLowerBound
-                        nElements += 1
-                        expression
-                    }).zipWithIndex.map(
-                      r =>
-                        Bucket.Entry(
-                          r._1._1, r._2, r._1._2, r._1._3, r._1._4
-                        )
-                    ) -> iterator
-                  )
-                  logDebug(s"Created bucket with size [$nElements].")
-                  bucket
-                } else {
-                  logWarning(s"Partition is empty!")
-                  None
-                }
-            }.iterator
-        }
-        /**
-          * Search phase.
-          */
-        .map {
-          bucket =>
-            (null, bucket)
-        }
-        /**
-          * @todo Before this, the buckets should be cached.
-          */
-        .join(snapshotQ.map((null, _)))
-        /**
-          * Compute local threshold.
-          */
-        .map {
-          case (_, (bucket: List[Bucket.Entry[PI]], (j, q))) =>
-            val bucketLength = bucket.head.length
-            logDebug(s"Computing local threshold for bucket with length [$bucketLength].")
-            val queryLength: Length = Math.sqrt(q.map(v => Math.pow(v, v)).sum)
-            val localThreshold = threshold / (bucketLength * queryLength)
-            ((j, q, localThreshold), bucket)
-        }
-          /**
-            * Prune buckets based on local threshold.
-            */
-        .filter {
-          case (((_, _, localThreshold), _)) =>
-            localThreshold <= 1
-        }
-        .flatMap {
-          case (((j, q, localThreshold), bucket)) =>
-            val candidates = if (localThreshold == 1) {
-              /**
-                * Use cosine similarity search algorithm.
-                */
-              innerProductPruning(
-                q,
-                cosineSimilarityPruning(q, bucket, threshold),
-                threshold
-              )
-            } else {
-              /**
-                * It must be lower than 1.
-                * Use naive retrieval.
-                */
-              innerProductPruning(q, bucket, threshold)
-            }
-            candidates.map {
-              case (pID, product) =>
-                (j, pID, product)
-            }
-        }
-        /**
-          * @todo Should combine into size-capped container, instead of grouping everything together.
-          */
-        .groupBy(_._1)
-        .map {
-          group =>
-            group._1 -> group._2.toSeq.sortBy(-_._3).take(k).map(x => x._2 -> x._3)
-        }
-    }
+      .filter {
+        case (((_, _, localThreshold), _)) =>
+          localThreshold <= 1
+      }
+      .flatMap {
+        case (((j, q, localThreshold), bucket)) =>
+          val candidates = if (localThreshold == 1) {
+            /**
+              * Use cosine similarity search algorithm.
+              */
+            innerProductPruning(
+              q,
+              cosineSimilarityPruning(q, bucket, threshold),
+              threshold
+            )
+          } else {
+            /**
+              * It must be lower than 1.
+              * Use naive retrieval.
+              */
+            innerProductPruning(q, bucket, threshold)
+          }
+          candidates.map {
+            case (pID, product) =>
+              (j, pID, product)
+          }
+      }
+      /**
+        * @todo Should combine into size-capped container, instead of grouping everything together.
+        */
+      .groupBy(_._1)
+      .map {
+        group =>
+          group._1 -> group._2.toSeq.sortBy(-_._3).take(k).map(x => x._2 -> x._3)
+      }
   }
 
   /**
