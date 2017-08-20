@@ -35,7 +35,9 @@ extends Logger with Serializable {
         val effectiveQ = Q.get.join(
           dd.map(q => (q, null))
         ).map(q => (q._1, q._2._1))
-        this ? (effectiveQ.cache(), k, threshold)
+        val recommendations = (this ? (effectiveQ.cache(), k, threshold)).cache()
+        recommendations.count()
+        recommendations
     }
   }
 
