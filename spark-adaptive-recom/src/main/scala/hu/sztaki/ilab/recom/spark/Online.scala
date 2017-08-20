@@ -61,6 +61,7 @@ extends Logger with Serializable {
             (i, p, length, normalized)
         }
         .sortBy(-_._3)
+        .cache()
 
       logDebug(s"Size of sorted data is [${sorted.count()}].")
 
