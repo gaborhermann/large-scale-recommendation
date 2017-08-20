@@ -52,7 +52,7 @@ extends Logger with Serializable {
     } else {
       logDebug(s"Matching queries from [Q].")
       logDebug(s"Snapshot [P] size is ${snapshotP.count()}.")
-      snapshotP
+      val sorted = snapshotP
         .map {
           case (i, p) =>
             logDebug(s"Calculating length and normalizing probe vector.")
@@ -61,11 +61,10 @@ extends Logger with Serializable {
             (i, p, length, normalized)
         }
         .sortBy(-_._3)
-        .map {
-          x =>
-            logDebug(s"Mapping probe vector after 'sortBy'.")
-            x
-        }
+
+      logDebug(s"Size of sorted data is [${sorted.count()}].")
+
+      sorted
         /**
           * Creating buckets on `P`.
           */
