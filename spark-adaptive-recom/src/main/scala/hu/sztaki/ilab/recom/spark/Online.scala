@@ -56,11 +56,16 @@ extends Logger with Serializable {
         .map {
           case (i, p) =>
             logDebug(s"Calculating length and normalizing probe vector.")
-            val length: Length = Math.sqrt(p.map(v => Math.pow(v, v)).sum)
+            val length: Double = Math.sqrt(p.map(v => Math.pow(v, v)).sum)
             val normalized = p.map(_ / length)
             (i, p, length, normalized)
         }
         .sortBy(-_._3)
+        .map {
+          x =>
+            logDebug(s"Mapping probe vector after 'sortBy'.")
+            x
+        }
         /**
           * Creating buckets on `P`.
           */
