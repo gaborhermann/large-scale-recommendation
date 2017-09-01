@@ -23,17 +23,18 @@ class suiteOnline extends FunSuite {
     val ssc = new StreamingContext(conf, Milliseconds(batchDuration))
     val sc = ssc.sparkContext
 
-    val batches = data.sliding(2000, 2000).map(slice => sc.makeRDD(slice))
+    val batches = data.sliding(1000, 1000).map(slice => sc.makeRDD(slice))
+    val coldData = batches.take(1).next()
 
     val ratings: DStream[Rating[Int, Int]] = ssc.queueStream(
-      (mutable.Queue() ++ batches).map(_.map(r => Rating.fromTuple[Int, Int](r))),
+      (mutable.Queue() ++ batches.drop(1)).map(_.map(r => Rating.fromTuple[Int, Int](r))),
       oneAtATime = true
     )
 
     val factorInit = PseudoRandomFactorInitializerDescriptor[Int](nFactors)
     val factorUpdate = new SGDUpdater(0.01)
 
-    val model = new Online(ratings)()
+    val model = new Online[Int, Int](coldData.map(r => Rating.fromTuple[Int, Int](r)))()
 
     val updatedVectors =
       model.buildModelWithMap(
@@ -71,7 +72,8 @@ class suiteOnline extends FunSuite {
     ssc.checkpoint("/tmp")
     val sc = ssc.sparkContext
 
-    val batches = data.sliding(2000, 2000).map(slice => sc.makeRDD(slice))
+    val batches = data.sliding(1000, 1000).map(slice => sc.makeRDD(slice))
+    val coldData = batches.take(1).next()
 
     val ratings: DStream[Rating[String, String]] = ssc.queueStream(
       (mutable.Queue() ++ batches).map(_.map(r => Rating.fromTuple[String, String](r))),
@@ -81,7 +83,7 @@ class suiteOnline extends FunSuite {
     val factorInit = PseudoRandomFactorInitializerDescriptor[String](nFactors)
     val factorUpdate = new SGDUpdater(0.01)
 
-    val model = new Online(ratings)()
+    val model = new Online(coldData.map(r => Rating.fromTuple[String, String](r)))()
 
     val updatedVectors =
       model.buildModelWithMap(
@@ -103,7 +105,7 @@ class suiteOnline extends FunSuite {
     Thread.sleep(30000)
 
     val user = 100.toString
-    queryQueue += (sc.makeRDD(Seq(user)))
+    queryQueue += sc.makeRDD(Seq(user))
 
     Thread.sleep(30000)
 

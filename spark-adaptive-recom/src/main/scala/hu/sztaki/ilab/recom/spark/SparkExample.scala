@@ -27,13 +27,13 @@ object SparkExample {
     val batch3 = sc.makeRDD(data.drop(30))
 
     val ratings: DStream[Rating[Int, Int]] = ssc.queueStream(
-      mutable.Queue(batch1, batch2, batch3).map(_.map(Rating.fromTuple)),
+      mutable.Queue(batch2, batch3).map(_.map(Rating.fromTuple)),
       oneAtATime = true)
 
     val factorInit = PseudoRandomFactorInitializerDescriptor[Int](numFactors)
     val factorUpdate = new SGDUpdater(0.01)
 
-    val model = new Online(ratings)()
+    val model = new Online[Int, Int](batch1.map(Rating.fromTuple))()
 
     val updatedVectors =
       if (offlineEvery == -1) {

@@ -12,7 +12,7 @@ import scala.reflect.ClassTag
 import scalaz.Scalaz
 
 class Online[QI: ClassTag, PI: ClassTag](
-  @transient protected val ratings: DStream[Rating[QI, PI]])(
+  @transient protected val cold: RDD[Rating[QI, PI]])(
   bucketLowerBound: Int = 50,
   bucketUpperBound: Int = 1000,
   nPartitions: Int = 20,
@@ -23,7 +23,7 @@ extends Logger with Serializable {
 
   @transient protected var Q: PossiblyCheckpointedRDD[Vector[QI]] = _
   @transient protected var P: PossiblyCheckpointedRDD[Vector[PI]] = _
-  @transient protected val ssc = ratings.context
+  @transient protected val spark = cold.context
 
   def queryVectors = Q
   def probeVectors = P
@@ -198,22 +198,22 @@ extends Logger with Serializable {
                                numFactors: Int):
   DStream[Either[UserVectorUpdate, ItemVectorUpdate]] = {
     @transient val users0: PossiblyCheckpointedRDD[Vector[QI]] =
-      NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq()))
+      NotCheckpointedRDD(spark.makeRDD(Seq()))
     @transient val items0: PossiblyCheckpointedRDD[Vector[PI]] =
-      NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq()))
+      NotCheckpointedRDD(spark.makeRDD(Seq()))
 
     Q = users0
     P = items0
 
     var ratingsHistory: PossiblyCheckpointedRDD[Rating[QI, PI]] =
-      NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq.empty[Rating[QI, PI]]).cache())
+      NotCheckpointedRDD(spark.makeRDD(Seq.empty[Rating[QI, PI]]).cache())
 
     var checkpointCnt = checkpointEvery
     var offlineCnt = offlineEvery
 
     import OfflineSpark._
 
-    val updates: DStream[Either[UserVectorUpdate, ItemVectorUpdate]] = ratings.transform { rs =>
+    def update(batch: RDD[Rating[QI, PI]]) = {
       checkpointCnt -= 1
       val checkpointCurrent = checkpointCnt <= 0
       if (checkpointCurrent) {
@@ -226,16 +226,16 @@ extends Logger with Serializable {
         offlineCnt = offlineEvery
       }
 
-      rs.cache()
-      ratingsHistory = NotCheckpointedRDD(ratingsHistory.get.union(rs.cache()).cache())
+      batch.cache()
+      ratingsHistory = NotCheckpointedRDD(ratingsHistory.get.union(batch.cache()).cache())
 
       val (uUpdates, iUpdates) = if (!offlineCurrent) {
         // online updates
 
         val (userUpdates, itemUpdates) =
-          offlineDSGDUpdatesOnly(rs, Q.get, P.get,
+          offlineDSGDUpdatesOnly(batch, Q.get, P.get,
             factorInitializerForQI, factorInitializerForPI, factorUpdate,
-            ssc.sparkContext.defaultParallelism, _.hashCode(), 1)
+            spark.defaultParallelism, _.hashCode(), 1)
 
         def applyUpdatesAndCheckpointOrCache[I: ClassTag](
           oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
@@ -279,19 +279,19 @@ extends Logger with Serializable {
         val (userUpdates, itemUpdates) = offlineAlgorithm match {
           case "DSGD" =>
             offlineDSGD(ratingsHistory.get,
-              ssc.sparkContext.makeRDD(Seq.empty[FactorVector[QI]]),
-              ssc.sparkContext.makeRDD(Seq.empty[FactorVector[PI]]),
+              spark.makeRDD(Seq.empty[FactorVector[QI]]),
+              spark.makeRDD(Seq.empty[FactorVector[PI]]),
               factorInitializerForQI, factorInitializerForPI, factorUpdate,
-              ssc.sparkContext.defaultParallelism, _.hashCode(), numberOfIterations)
-            /*
-          case "ALS" =>
-            val model = ALS.train(ratingsHistory.get.map {
-              case hu.sztaki.ilab.recom.core.Rating(u,i,r) =>
-                org.apache.spark.mllib.recommendation.Rating(u,i,r)
-            }, numFactors, numberOfIterations, 0.1)
+              spark.defaultParallelism, _.hashCode(), numberOfIterations)
+          /*
+        case "ALS" =>
+          val model = ALS.train(ratingsHistory.get.map {
+            case hu.sztaki.ilab.recom.core.Rating(u,i,r) =>
+              org.apache.spark.mllib.recommendation.Rating(u,i,r)
+          }, numFactors, numberOfIterations, 0.1)
 
-            (model.userFeatures.cache(), model.productFeatures.cache())
-            */
+          (model.userFeatures.cache(), model.productFeatures.cache())
+          */
         }
 
         val oldUserRDD = Q
@@ -325,6 +325,10 @@ extends Logger with Serializable {
       userUpdatesEither.union(itemUpdatesEither)
     }
 
+    update(cold)
+
+    val updates: DStream[Either[UserVectorUpdate, ItemVectorUpdate]] = ratings.transform(update(_))
+
     updates
   }
 
@@ -336,9 +340,9 @@ extends Logger with Serializable {
                         checkpointEvery: Int)
   : DStream[Either[Vector[QI], Vector[PI]]] = {
     @transient val users0: PossiblyCheckpointedRDD[Vector[QI]] =
-      NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq.empty[Vector[QI]]))
+      NotCheckpointedRDD(spark.makeRDD(Seq.empty[Vector[QI]]))
     @transient val items0: PossiblyCheckpointedRDD[Vector[PI]] =
-      NotCheckpointedRDD(ssc.sparkContext.makeRDD(Seq.empty[Vector[PI]]))
+      NotCheckpointedRDD(spark.makeRDD(Seq.empty[Vector[PI]]))
 
     Q = users0
     P = items0
@@ -357,7 +361,7 @@ extends Logger with Serializable {
       val (userUpdates, itemUpdates) =
         offlineDSGDUpdatesOnly(rs, Q.get, P.get,
           factorInitializerForQI, factorInitializerForPI, factorUpdate,
-          ssc.sparkContext.defaultParallelism, _.hashCode(), 1)
+          spark.defaultParallelism, _.hashCode(), 1)
 
       def applyUpdatesAndCheckpointOrCache[I: ClassTag](
         oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
