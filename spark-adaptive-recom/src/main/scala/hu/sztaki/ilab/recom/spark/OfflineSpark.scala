@@ -28,7 +28,7 @@ object OfflineSpark {
     * Used so that we can output only the updates in an online scenario.
     */
   class UpdateSeparatedHashMap[A, B](val initial: mutable.HashMap[A, B])
-    extends Serializable with mutable.Map[A, B] {
+  extends Serializable with mutable.Map[A, B] {
     private val updateMap = new mutable.HashMap[A, B]()
 
     override def getOrElse[B1 >: B](key: A, default: => B1): B1 = {
@@ -111,7 +111,7 @@ object OfflineSpark {
       new UpdateSeparatedHashMap(mutable.HashMap(iter.toIndexedSeq: _*))
 
     val (userBlocks, itemBlocks) =
-      offlineDSGDWithCustomMap(mapForQI, mapForPI)(
+      offlineDSGDWithCustomMap[QI, PI, UpdateSeparatedHashMap](mapForQI, mapForPI)(
         ratings, users, items, factorInitializerForQI, factorInitializerForPI,
         factorUpdate, numPartitions, hash, iterations)
 
