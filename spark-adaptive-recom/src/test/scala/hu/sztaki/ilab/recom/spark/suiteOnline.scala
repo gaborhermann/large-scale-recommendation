@@ -79,7 +79,7 @@ class suiteOnline extends FunSuite with Matchers with Logging {
     val coldData = batches.take(1).next()
 
     val ratings: DStream[Rating[String, String]] = ssc.queueStream(
-      (mutable.Queue() ++ batches).map(_.map(r => Rating.fromTuple[String, String](r))),
+      (mutable.Queue() ++ batches.drop(1)).map(_.map(r => Rating.fromTuple[String, String](r))),
       oneAtATime = true
     )
 

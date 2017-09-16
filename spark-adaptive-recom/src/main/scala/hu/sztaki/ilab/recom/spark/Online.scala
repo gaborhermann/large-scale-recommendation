@@ -377,7 +377,7 @@ extends Logger with Serializable {
 
     import OfflineSpark._
 
-    val updates = ratings.transform { rs =>
+    def update(batch: RDD[Rating[QI, PI]]) = {
       cnt -= 1
       val checkpointCurrent = cnt <= 0
       if (checkpointCurrent) {
@@ -385,13 +385,13 @@ extends Logger with Serializable {
       }
 
       val (userUpdates, itemUpdates) =
-        offlineDSGDUpdatesOnly(rs, Q.get, P.get,
+        offlineDSGDUpdatesOnly(batch, Q.get, P.get,
           factorInitializerForQI, factorInitializerForPI, factorUpdate,
           spark.defaultParallelism, _.hashCode(), 1)
 
       def applyUpdatesAndCheckpointOrCache[I: ClassTag](
-        oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
-        updates: RDD[(I, Array[Double])]):
+                                                         oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
+                                                         updates: RDD[(I, Array[Double])]):
       PossiblyCheckpointedRDD[(I, Array[Double])] = {
         // merging old values with updates
         val rdd = oldRDD.get.fullOuterJoin(updates)
@@ -425,6 +425,11 @@ extends Logger with Serializable {
       // user updates are marked with true, while item updates with false
       userUpdates.map[Either[Vector[QI], Vector[PI]]](Left(_)).union(itemUpdates.map(Right(_)))
     }
+
+    logInfo("Reading cold data.")
+    update(cold)
+
+    val updates = ratings.transform { update(_) }
 
     updates
   }
