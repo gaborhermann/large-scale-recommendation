@@ -350,6 +350,7 @@ extends Logger with Serializable {
       userUpdatesEither.union(itemUpdatesEither)
     }
 
+    logInfo("Reading cold data.")
     update(cold)
 
     val updates: DStream[Either[UserVectorUpdate, ItemVectorUpdate]] = ratings.transform(update(_))
