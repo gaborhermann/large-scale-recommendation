@@ -1,16 +1,19 @@
 package hu.sztaki.ilab.recom.spark
 
 import hu.sztaki.ilab.recom.core.{PseudoRandomFactorInitializerDescriptor, Rating, SGDUpdater}
-import hu.sztaki.ilab.recom.spark.SparkExample.data
 import org.apache.spark.SparkConf
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.{Milliseconds, StreamingContext}
 import org.apache.spark.streaming.dstream.DStream
-import org.scalatest.FunSuite
+import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.concurrent.Eventually
+import org.scalatest.concurrent.PatienceConfiguration.{Interval, Timeout}
+import org.scalatest.time.{Minutes, Seconds, Span}
 
 import scala.collection.mutable
 
-class suiteOnline extends FunSuite {
+class suiteOnline extends FunSuite with Matchers with Logging {
   test("Basic online Spark test.") {
     val data = for (user <- 1 to 100; item <- 1 to (101 - user)) yield (user, item, 5.0)
 
@@ -47,7 +50,7 @@ class suiteOnline extends FunSuite {
     Thread.sleep(30000)
 
     val user = 100
-    val items = model ? (List(user), 5, 0.001)
+    val items = model ? (List(user), (i: Iterator[(Int, Array[Double])]) => i, 5, 0.001)
     items.flatMap {
       _._2
     }.foreach {
@@ -63,7 +66,7 @@ class suiteOnline extends FunSuite {
                yield (user.toString, item.toString, 5.0)
 
     val nFactors = 4
-    val batchDuration = 5000
+    val batchDuration = 1000
     val checkpointEvery = 40
 
     val conf = new SparkConf()
@@ -96,13 +99,23 @@ class suiteOnline extends FunSuite {
       queryQueue,
       oneAtATime = true
     )
-    (model ? (queries, 5, 0.001))
+    val filter: Iterator[(String, Array[Double])] => Iterator[(String, Array[Double])] = {
+      _.filter {
+        p => p._1.toInt > 10
+      }
+    }
+
+    (model ? (queries, filter, 5, 0.001))
       .join(queries.map((_, null)))
       .print()
 
     ssc.start()
 
-    Thread.sleep(30000)
+    logInfo("Waiting for ranking snapshots to be computed.")
+    Eventually.eventually(Timeout(Span(4, Minutes)), Interval(Span(1, Seconds))) {
+      model.snapshotsComputed should be >= 1
+    }
+    logInfo("First ranking snapshot has been computed.")
 
     val user = 100.toString
     queryQueue += sc.makeRDD(Seq(user))

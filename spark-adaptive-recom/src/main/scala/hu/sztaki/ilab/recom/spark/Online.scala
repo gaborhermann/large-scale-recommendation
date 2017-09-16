@@ -16,6 +16,7 @@ class Online[QI: ClassTag, PI: ClassTag](
   bucketLowerBound: Int = 50,
   bucketUpperBound: Int = 1000,
   nPartitions: Int = 20,
+  rankSnapshotFrequency: Int = 30,
   mapInitializer: mutable.Map[Int, Array[Double]] = mutable.HashMap.empty)
 extends Logger with Serializable {
   case class UserVectorUpdate(ID: QI, vec: Array[Double])
@@ -24,82 +25,106 @@ extends Logger with Serializable {
   @transient protected var Q: PossiblyCheckpointedRDD[Vector[QI]] = _
   @transient protected var P: PossiblyCheckpointedRDD[Vector[PI]] = _
   @transient protected val spark = cold.context
+  @transient protected var L: RDD[(Null, List[Online.Bucket.Entry[PI]])] =
+    spark.emptyRDD[(Null, List[Online.Bucket.Entry[PI]])]
+
+  protected var snapshotFrequencyCounter: Int = rankSnapshotFrequency
+  protected var _snapshotsComputed: Int = 0
+  def snapshotsComputed = _snapshotsComputed
 
   def queryVectors = Q
   def probeVectors = P
 
-  def ?(queries: DStream[QI], k: Int = 10,
+  def ?(queries: DStream[QI],
+        rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])],
+        k: Int = 10,
         threshold: Double = 0.5): DStream[(QI, Seq[(PI, Double)])] = {
     queries.transform {
       dd =>
         val effectiveQ = Q.get.join(
           dd.map(q => (q, null))
         ).map(q => (q._1, q._2._1))
-        this ? (effectiveQ, k, threshold)
+        this ? (effectiveQ, rankFilter, k, threshold)
     }
   }
 
-  def ?(query: List[QI], k: Int, threshold: Double): Array[(QI, Seq[(PI, Double)])] = {
-    this ? (Q.get.filter(q => query.contains(q._1)).cache(), k, threshold)
+  def ?(query: List[QI], rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])],
+        k: Int, threshold: Double): Array[(QI, Seq[(PI, Double)])] = {
+    this ? (Q.get.filter(q => query.contains(q._1)).cache(), rankFilter, k, threshold)
   }.collect()
 
+  def rankSnapshot(rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])])
+  : RDD[(Null, List[Online.Bucket.Entry[PI]])] = {
+    if (snapshotFrequencyCounter == 0) {
+      snapshotFrequencyCounter = rankSnapshotFrequency
+      L.unpersist()
+      L = P.get
+        .mapPartitions {
+          rankFilter
+        }
+        .repartition(nPartitions)
+        .map {
+          case (i, p) =>
+            logDebug(s"Calculating length and normalizing probe vector.")
+            val length: Double = Math.sqrt(p.map(v => Math.pow(v, v)).sum)
+            val normalized = p.map(_ / length)
+            (i, p, length, normalized)
+        }
+        .sortBy(-_._3)
+        /**
+          * Creating buckets on `P`.
+          */
+        .mapPartitions {
+          partition =>
+            logDebug(s"Creating bucket for partition.")
+            Scalaz.unfold(partition) {
+              iterator =>
+                if (iterator.hasNext) {
+                  val first = iterator.next
+                  val maximal = first._3
+                  var nElements = 1
+                  val bucket = Some(
+                    (List(first) ++ iterator.takeWhile {
+                      case (_, _, length, _) =>
+                        val expression =
+                          (length > maximal * 0.9 && nElements < bucketUpperBound) ||
+                            nElements < bucketLowerBound
+                        nElements += 1
+                        expression
+                    }).zipWithIndex.map(
+                      r =>
+                        Bucket.Entry(
+                          r._1._1, r._2, r._1._2, r._1._3, r._1._4
+                        )
+                    ) -> iterator
+                  )
+                  logDebug(s"Created bucket with size [$nElements].")
+                  bucket
+                } else {
+                  logWarning(s"Partition is empty!")
+                  None
+                }
+            }.iterator
+        }
+        /**
+          * Search phase.
+          */
+        .map {
+          bucket =>
+            (null, bucket)
+        }
+        .cache()
+      _snapshotsComputed += 1
+    } else {
+      snapshotFrequencyCounter -= 1
+    }
+    L
+  }
+
   protected def ?(snapshotQ: RDD[(QI, Array[Double])],
-                  k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = {
-    P.get
-      .repartition(nPartitions)
-      .map {
-        case (i, p) =>
-          logDebug(s"Calculating length and normalizing probe vector.")
-          val length: Double = Math.sqrt(p.map(v => Math.pow(v, v)).sum)
-          val normalized = p.map(_ / length)
-          (i, p, length, normalized)
-      }
-      .sortBy(-_._3)
-      /**
-        * Creating buckets on `P`.
-        */
-      .mapPartitions {
-        partition =>
-          logDebug(s"Creating bucket for partition.")
-          Scalaz.unfold(partition) {
-            iterator =>
-              if (iterator.hasNext) {
-                val first = iterator.next
-                val maximal = first._3
-                var nElements = 1
-                val bucket = Some(
-                  (List(first) ++ iterator.takeWhile {
-                    case (_, _, length, _) =>
-                      val expression =
-                        (length > maximal * 0.9 && nElements < bucketUpperBound) ||
-                          nElements < bucketLowerBound
-                      nElements += 1
-                      expression
-                  }).zipWithIndex.map(
-                    r =>
-                      Bucket.Entry(
-                        r._1._1, r._2, r._1._2, r._1._3, r._1._4
-                      )
-                  ) -> iterator
-                )
-                logDebug(s"Created bucket with size [$nElements].")
-                bucket
-              } else {
-                logWarning(s"Partition is empty!")
-                None
-              }
-          }.iterator
-      }
-      /**
-        * Search phase.
-        */
-      .map {
-        bucket =>
-          (null, bucket)
-      }
-      /**
-        * @todo Before this, the buckets should be cached.
-        */
+                  rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])],
+                  k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = synchronized {
+    rankSnapshot(rankFilter)
       .join(snapshotQ.map((null, _)))
       /**
         * Compute local threshold.
