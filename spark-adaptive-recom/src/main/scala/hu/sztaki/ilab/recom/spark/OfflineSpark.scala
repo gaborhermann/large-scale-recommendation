@@ -106,18 +106,26 @@ object OfflineSpark {
                              iterations: Int): (RDD[Vector[QI]], RDD[Vector[PI]]) = {
     val mapForQI = (iter: Iterator[(QI, Array[Double])]) =>
       //        mutable.HashMap(iter.toIndexedSeq: _*))(
-      new UpdateSeparatedHashMap(mutable.HashMap(iter.toIndexedSeq: _*))
+      new UpdateSeparatedHashMap[QI, Array[Double]](mutable.HashMap(iter.toIndexedSeq: _*))
     val mapForPI = (iter: Iterator[(PI, Array[Double])]) =>
-      new UpdateSeparatedHashMap(mutable.HashMap(iter.toIndexedSeq: _*))
+      new UpdateSeparatedHashMap[PI, Array[Double]](mutable.HashMap(iter.toIndexedSeq: _*))
 
     val (userBlocks, itemBlocks) =
-      offlineDSGDWithCustomMap[QI, PI, UpdateSeparatedHashMap](mapForQI, mapForPI)(
+      offlineDSGDWithCustomMap[QI,
+                               PI,
+                               UpdateSeparatedHashMap[QI, Array[Double]],
+                               UpdateSeparatedHashMap[PI, Array[Double]]](mapForQI, mapForPI)(
         ratings, users, items, factorInitializerForQI, factorInitializerForPI,
         factorUpdate, numPartitions, hash, iterations)
 
     // flattening the partition HashMaps
     val result = (userBlocks.mapPartitions(_.next()._2.updates).cache(), itemBlocks
-      .mapPartitions(_.next()._2.updates).cache())
+      .mapPartitions(
+        _.next()
+         ._2
+         .updates
+      ).cache()
+    )
 
     userBlocks.unpersist()
     itemBlocks.unpersist()
@@ -125,9 +133,12 @@ object OfflineSpark {
     result
   }
 
-  def offlineDSGDWithCustomMap[QI: ClassTag, PI: ClassTag, CustomMap[A, B] <: mutable.Map[A, B]](
-    mapForQI: Iterator[(QI, Array[Double])] => CustomMap[QI, Array[Double]],
-    mapForPI: Iterator[(PI, Array[Double])] => CustomMap[PI, Array[Double]])(
+  def offlineDSGDWithCustomMap[QI: ClassTag,
+                               PI: ClassTag,
+                               QIMap <: mutable.Map[QI, Array[Double]],
+                               PIMap <: mutable.Map[PI, Array[Double]]](
+    mapForQI: Iterator[(QI, Array[Double])] => QIMap,
+    mapForPI: Iterator[(PI, Array[Double])] => PIMap)(
     ratings: RDD[Rating[QI, PI]],
     users: RDD[Vector[QI]],
     items: RDD[Vector[PI]],
@@ -137,8 +148,9 @@ object OfflineSpark {
     numPartitions: Int,
     hash: Int => Int,
     iterations: Int)(
-    implicit classTag: ClassTag[CustomMap[PI, Array[Double]]]):
-  (RDD[(Int, CustomMap[QI, Array[Double]])], RDD[(Int, CustomMap[PI, Array[Double]])]) = {
+    implicit classTagPI: ClassTag[QIMap],
+             classTagQI: ClassTag[PIMap]):
+  (RDD[(Int, QIMap)], RDD[(Int, PIMap)]) = {
 
     def shiftedPartitioner(shift: Int) = ShiftedIntHasher(numPartitions, hash, shift)
 
@@ -163,10 +175,10 @@ object OfflineSpark {
         }, preservesPartitioning = true)
         .cache()
 
-    def partitionToHashMaps[I: ClassTag](
+    def partitionToHashMaps[I: ClassTag, IMap <: mutable.Map[I, Array[Double]]](
       rdd: RDD[(I, Array[Double])],
-      mapForI: Iterator[(I, Array[Double])] => CustomMap[I, Array[Double]])
-    : RDD[(Int, CustomMap[I, Array[Double]])] = {
+      mapForI: Iterator[(I, Array[Double])] => IMap)
+    : RDD[(Int, IMap)] = {
       rdd
         .partitionBy(hashPartitioner)
         .mapPartitionsWithIndex {
@@ -175,10 +187,10 @@ object OfflineSpark {
         }
     }
 
-    var userBlocksPartitioned = partitionToHashMaps[QI](users, mapForQI)
+    var userBlocksPartitioned = partitionToHashMaps[QI, QIMap](users, mapForQI)
       .cache()
 
-    var itemBlocks = partitionToHashMaps[PI](items, mapForPI)
+    var itemBlocks = partitionToHashMaps[PI, PIMap](items, mapForPI)
       .cache()
 
     for (_ <- 0 until iterations) {

@@ -390,8 +390,8 @@ extends Logger with Serializable {
           spark.defaultParallelism, _.hashCode(), 1)
 
       def applyUpdatesAndCheckpointOrCache[I: ClassTag](
-                                                         oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
-                                                         updates: RDD[(I, Array[Double])]):
+        oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
+        updates: RDD[(I, Array[Double])]):
       PossiblyCheckpointedRDD[(I, Array[Double])] = {
         // merging old values with updates
         val rdd = oldRDD.get.fullOuterJoin(updates)
