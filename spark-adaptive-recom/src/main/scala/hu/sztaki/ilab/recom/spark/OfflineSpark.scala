@@ -182,8 +182,10 @@ object OfflineSpark {
       rdd
         .partitionBy(hashPartitioner)
         .mapPartitionsWithIndex {
-          case (partitionId: Int, iter: Iterator[(I, Array[Double])]) =>
-            Iterator((partitionId, mapForI(iter)))
+          case (partitionId: Int, iter: Iterator[(I, Array[Double])]) => {
+            val customMap = mapForI(iter)
+            Iterator((partitionId, customMap))
+          }
         }
     }
 
