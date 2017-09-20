@@ -74,35 +74,40 @@ extends Logger with Serializable {
           */
         .mapPartitions {
           partition =>
-            logDebug(s"Creating bucket for partition.")
-            Scalaz.unfold(partition) {
-              iterator =>
-                if (iterator.hasNext) {
-                  val first = iterator.next
-                  val maximal = first._3
-                  var nElements = 1
-                  val bucket = Some(
-                    (List(first) ++ iterator.takeWhile {
-                      case (_, _, length, _) =>
-                        val expression =
-                          (length > maximal * 0.9 && nElements < bucketUpperBound) ||
-                            nElements < bucketLowerBound
-                        nElements += 1
-                        expression
-                    }).zipWithIndex.map(
-                      r =>
-                        Bucket.Entry(
-                          r._1._1, r._2, r._1._2, r._1._3, r._1._4
-                        )
-                    ) -> iterator
-                  )
-                  logDebug(s"Created bucket with size [$nElements].")
-                  bucket
-                } else {
-                  logWarning(s"Partition is empty!")
-                  None
-                }
-            }.iterator
+            if (partition.nonEmpty) {
+              logWarning(s"Partition is empty!")
+              Iterator.empty
+            } else {
+              logDebug(s"Creating bucket for partition.")
+              Scalaz.unfold(partition) {
+                iterator =>
+                  if (iterator.hasNext) {
+                    val first = iterator.next
+                    val maximal = first._3
+                    var nElements = 1
+                    val bucket = Some(
+                      (List(first) ++ iterator.takeWhile {
+                        case (_, _, length, _) =>
+                          val expression =
+                            (length > maximal * 0.9 && nElements < bucketUpperBound) ||
+                              nElements < bucketLowerBound
+                          nElements += 1
+                          expression
+                      }).zipWithIndex.map(
+                        r =>
+                          Bucket.Entry(
+                            r._1._1, r._2, r._1._2, r._1._3, r._1._4
+                          )
+                      ) -> iterator
+                    )
+                    logDebug(s"Created bucket with size [$nElements].")
+                    bucket
+                  } else {
+                    logWarning(s"Partition seems to be empty!")
+                    None
+                  }
+              }.iterator
+            }
         }
         /**
           * Search phase.
