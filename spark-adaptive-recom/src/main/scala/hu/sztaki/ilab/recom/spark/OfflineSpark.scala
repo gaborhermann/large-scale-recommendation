@@ -200,7 +200,7 @@ object OfflineSpark {
         val updated = ratingsByUser
           .zipPartitions(
             userBlocksPartitioned, itemsBlocksPartitioned, preservesPartitioning = true) {
-            case (ratingBlockIter, userIter, itemIter) =>
+            case (ratingBlockIter, userIter: Iterator[(Int, QIMap)], itemIter: Iterator[(Int, PIMap)]) =>
               val (userPartitionId, users) = userIter.next()
               val (itemPartitionId, items) = itemIter.next()
 
