@@ -41,7 +41,7 @@ class suiteOnline extends FunSuite with Matchers with Logging {
 
     val updatedVectors =
       model.buildModelWithMap(
-        ratings, factorInit, factorInit, factorUpdate, Map(), checkpointEvery)
+        ratings, factorInit, factorInit, factorUpdate, checkpointEvery)
 
     updatedVectors.foreachRDD(_.foreach(println))
 
@@ -86,13 +86,13 @@ class suiteOnline extends FunSuite with Matchers with Logging {
     val factorInit = PseudoRandomFactorInitializerDescriptor[String](nFactors)
     val factorUpdate = new SGDUpdater(0.01)
 
-    val model = new Online(coldData.map(r => Rating.fromTuple[String, String](r)))()
+    val model = new Online[String, String](coldData.map(r => Rating.fromTuple[String, String](r)))()
 
     val updatedVectors =
       model.buildModelWithMap(
-        ratings, factorInit, factorInit, factorUpdate, Map(), checkpointEvery)
+        ratings, factorInit, factorInit, factorUpdate, checkpointEvery)
 
-    updatedVectors.foreachRDD(_.foreach(println))
+    updatedVectors.foreachRDD(_.count())
 
     val queryQueue = mutable.Queue[RDD[String]]()
     val queries = ssc.queueStream(

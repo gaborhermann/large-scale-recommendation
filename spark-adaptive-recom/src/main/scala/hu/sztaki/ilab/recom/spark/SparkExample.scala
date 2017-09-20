@@ -38,7 +38,7 @@ object SparkExample {
     val updatedVectors =
       if (offlineEvery == -1) {
         model.buildModelWithMap(
-          ratings, factorInit, factorInit, factorUpdate, Map(), checkpointEvery)
+          ratings, factorInit, factorInit, factorUpdate, checkpointEvery)
       } else {
         model.buildModelCombineOffline(
           ratings, factorInit, factorInit, factorUpdate, Map(), checkpointEvery,

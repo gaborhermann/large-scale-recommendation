@@ -7,7 +7,6 @@ import org.apache.spark.rdd._
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.streaming.dstream._
 
-import scala.collection.mutable
 import scala.reflect.ClassTag
 import scalaz.Scalaz
 
@@ -16,8 +15,7 @@ class Online[QI: ClassTag, PI: ClassTag](
   bucketLowerBound: Int = 50,
   bucketUpperBound: Int = 1000,
   nPartitions: Int = 20,
-  rankSnapshotFrequency: Int = 30,
-  mapInitializer: mutable.Map[Int, Array[Double]] = mutable.HashMap.empty)
+  rankSnapshotFrequency: Int = 30)
 extends Logger with Serializable {
   case class UserVectorUpdate(ID: QI, vec: Array[Double])
   case class ItemVectorUpdate(ID: PI, vec: Array[Double])
@@ -362,7 +360,6 @@ extends Logger with Serializable {
                         factorInitializerForQI: FactorInitializerDescriptor[QI],
                         factorInitializerForPI: FactorInitializerDescriptor[PI],
                         factorUpdate: FactorUpdater,
-                        parameters: Map[String, String],
                         checkpointEvery: Int)
   : DStream[Either[Vector[QI], Vector[PI]]] = {
     @transient val users0: PossiblyCheckpointedRDD[Vector[QI]] =
@@ -385,7 +382,7 @@ extends Logger with Serializable {
       }
 
       val (userUpdates, itemUpdates) =
-        offlineDSGDUpdatesOnly(batch, Q.get, P.get,
+        offlineDSGDUpdatesOnly[QI, PI](batch, Q.get, P.get,
           factorInitializerForQI, factorInitializerForPI, factorUpdate,
           spark.defaultParallelism, _.hashCode(), 1)
 
