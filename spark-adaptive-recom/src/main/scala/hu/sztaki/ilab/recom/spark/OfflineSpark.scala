@@ -127,9 +127,12 @@ object OfflineSpark {
     // flattening the partition HashMaps
     val result = (userBlocks.mapPartitions(_.next()._2.updates).cache(), itemBlocks
       .mapPartitions(
-        _.next()
-         ._2
-         .updates
+        _.next()._2 match {
+          case map: mutable.HashMap[PI, Array[Double]] =>
+            map.iterator
+          case map: UpdateSeparatedHashMap[PI, Array[Double]] =>
+            map.updates
+        }
       ).cache()
     )
 
