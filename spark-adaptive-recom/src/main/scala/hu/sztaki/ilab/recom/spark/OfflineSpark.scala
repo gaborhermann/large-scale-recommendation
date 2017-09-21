@@ -228,17 +228,18 @@ object OfflineSpark {
               }
 
               Iterator(((userPartitionId, users), (itemPartitionId, items)))
-          }
+          }.cache()
 
-        var prevUserBlocks = userBlocksPartitioned
+        val prevUserBlocks = userBlocksPartitioned
         userBlocksPartitioned = updated.map { case (userBlock, _) => userBlock }.cache()
         prevUserBlocks.unpersist()
 
-        var prevItemBlocks = itemBlocks
+        val prevItemBlocks = itemBlocks
         itemBlocks = updated
           .values
           .partitionBy(shiftedPartitioner(i))
           .cache()
+        updated.unpersist()
         prevItemBlocks.unpersist()
       }
     }
