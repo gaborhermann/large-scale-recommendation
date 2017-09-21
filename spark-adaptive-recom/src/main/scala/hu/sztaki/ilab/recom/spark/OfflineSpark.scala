@@ -60,7 +60,13 @@ object OfflineSpark {
       }
     }
 
-    override def iterator: Iterator[(A, B)] = all
+    override def iterator: Iterator[(A, B)] = new Iterator[(A, B)] {
+      private val local = all
+
+      override def hasNext = all.hasNext
+
+      override def next() = all.next()
+    }
   }
 
   def offlineDSGD[QI: ClassTag, PI: ClassTag](ratings: RDD[Rating[QI, PI]],
