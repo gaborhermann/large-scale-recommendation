@@ -210,7 +210,14 @@ object OfflineSpark {
             userBlocksPartitioned, itemsBlocksPartitioned, preservesPartitioning = true) {
             case (ratingBlockIter, userIter: Iterator[(Int, QIMap)], itemIter: Iterator[(Int, PIMap)]) =>
               val (userPartitionId, users) = userIter.next()
-              val (itemPartitionId, items) = itemIter.next()
+              val itemsPartitioned = itemIter.next()
+              val itemPartitionId = itemsPartitioned._1
+              val items = (itemsPartitioned._2 match {
+                case map: mutable.HashMap[PI, Array[Double]] =>
+                  new UpdateSeparatedHashMap[PI, Array[Double]](map)
+                case _: PIMap =>
+                  itemsPartitioned._2
+              }).asInstanceOf[PIMap]
 
               val currentRatingBlock: Array[Rating[QI, PI]] = ratingBlockIter.next()(itemPartitionId)
 
