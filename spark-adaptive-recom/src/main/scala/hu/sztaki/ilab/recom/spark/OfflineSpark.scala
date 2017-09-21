@@ -1,7 +1,7 @@
 package hu.sztaki.ilab.recom.spark
 
 import hu.sztaki.ilab.recom.core._
-import org.apache.spark.{rdd, _}
+import org.apache.spark._
 import org.apache.spark.rdd._
 
 import scala.collection.immutable.HashMap
@@ -126,14 +126,15 @@ object OfflineSpark {
 
     // flattening the partition HashMaps
     val result = (userBlocks.mapPartitions(_.next()._2.updates).cache(), itemBlocks
-      .mapPartitions(
+      .asInstanceOf[RDD[(Int, mutable.Map[PI, Array[Double]])]]
+      .mapPartitions {
         _.next()._2 match {
           case map: mutable.HashMap[PI, Array[Double]] =>
             map.iterator
           case map: UpdateSeparatedHashMap[PI, Array[Double]] =>
             map.updates
         }
-      ).cache()
+      }.cache()
     )
 
     userBlocks.unpersist()
