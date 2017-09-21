@@ -41,7 +41,7 @@ object OfflineSpark {
 
     def updates: Iterator[(A, B)] = updateMap.iterator
 
-    def all: Iterator[(A, B)] =
+    def all(): Iterator[(A, B)] =
       HashMap(initial.toIndexedSeq ++ updateMap.toIndexedSeq: _*).toIterator
 
     override def +=(kv: (A, B)): UpdateSeparatedHashMap.this.type = {
@@ -61,11 +61,11 @@ object OfflineSpark {
     }
 
     override def iterator: Iterator[(A, B)] = new Iterator[(A, B)] {
-      private val local = all
+      private val local = all()
 
-      override def hasNext = all.hasNext
+      override def hasNext = local.hasNext
 
-      override def next() = all.next()
+      override def next() = local.next()
     }
   }
 

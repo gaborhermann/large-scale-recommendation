@@ -74,7 +74,7 @@ extends Logger with Serializable {
           */
         .mapPartitions {
           partition =>
-            if (partition.nonEmpty) {
+            if (partition.isEmpty) {
               logWarning(s"Partition is empty!")
               Iterator.empty
             } else {

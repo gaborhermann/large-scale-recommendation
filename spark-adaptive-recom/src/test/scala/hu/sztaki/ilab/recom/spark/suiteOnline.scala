@@ -92,19 +92,20 @@ class suiteOnline extends FunSuite with Matchers with Logging {
       model.buildModelWithMap(
         ratings, factorInit, factorInit, factorUpdate, checkpointEvery)
 
-    updatedVectors.foreachRDD(_.count())
+    updatedVectors.print()
 
     val queryQueue = mutable.Queue[RDD[String]]()
     val queries = ssc.queueStream(
       queryQueue,
       oneAtATime = true
-    )
+    ).cache()
     val filter: Iterator[(String, Array[Double])] => Iterator[(String, Array[Double])] = {
       _.filter {
         p => p._1.toInt > 10
       }
     }
 
+    queries.print()
     (model ? (queries, filter, 5, 0.001))
       .join(queries.map((_, null)))
       .print()
