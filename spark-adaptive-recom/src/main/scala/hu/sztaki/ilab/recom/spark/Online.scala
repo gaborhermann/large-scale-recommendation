@@ -384,7 +384,7 @@ extends Logger with Serializable {
 
     import OfflineSpark._
 
-    def update(batch: RDD[Rating[QI, PI]]) = {
+    def update(batch: RDD[Rating[QI, PI]]) = synchronized {
       cnt -= 1
       val checkpointCurrent = cnt <= 0
       if (checkpointCurrent) {
