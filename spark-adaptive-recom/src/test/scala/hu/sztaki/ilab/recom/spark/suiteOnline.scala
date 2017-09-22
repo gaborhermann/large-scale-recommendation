@@ -81,12 +81,14 @@ class suiteOnline extends FunSuite with Matchers with Logging {
     val ratings: DStream[Rating[String, String]] = ssc.queueStream(
       (mutable.Queue() ++ batches.drop(1)).map(_.map(r => Rating.fromTuple[String, String](r))),
       oneAtATime = true
-    )
+    ).repartition(21)
 
     val factorInit = PseudoRandomFactorInitializerDescriptor[String](nFactors)
     val factorUpdate = new SGDUpdater(0.01)
 
-    val model = new Online[String, String](coldData.map(r => Rating.fromTuple[String, String](r)))()
+    val model = new Online[String, String](
+      coldData.map(r => Rating.fromTuple[String, String](r)).repartition(5)
+    )()
 
     val updatedVectors =
       model.buildModelWithMap(

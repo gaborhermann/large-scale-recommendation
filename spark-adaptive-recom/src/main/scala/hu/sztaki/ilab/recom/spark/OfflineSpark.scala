@@ -13,14 +13,13 @@ object OfflineSpark {
   type Vector[I] = (I, Array[Double])
 
   case class ShiftedIntHasher(partitions: Int,
-                              nonNegativeHash: Int => Int,
+                              maybeNegativeHash: Int => Int,
                               shift: Int) extends Partitioner {
     override def numPartitions: Int = partitions
 
     override def getPartition(key: Any): Int = {
-      (nonNegativeHash(key.hashCode()) + shift) % partitions
+      (math.abs(maybeNegativeHash(key.hashCode())) + shift) % partitions
     }
-
   }
 
   /**
@@ -210,14 +209,7 @@ object OfflineSpark {
             userBlocksPartitioned, itemsBlocksPartitioned, preservesPartitioning = true) {
             case (ratingBlockIter, userIter: Iterator[(Int, QIMap)], itemIter: Iterator[(Int, PIMap)]) =>
               val (userPartitionId, users) = userIter.next()
-              val itemsPartitioned = itemIter.next()
-              val itemPartitionId = itemsPartitioned._1
-              val items = (itemsPartitioned._2 match {
-                case map: mutable.HashMap[PI, Array[Double]] =>
-                  new UpdateSeparatedHashMap[PI, Array[Double]](map)
-                case _: PIMap =>
-                  itemsPartitioned._2
-              }).asInstanceOf[PIMap]
+              val (itemPartitionId, items) = itemIter.next()
 
               val currentRatingBlock: Array[Rating[QI, PI]] = ratingBlockIter.next()(itemPartitionId)
 
