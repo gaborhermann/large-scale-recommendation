@@ -382,8 +382,6 @@ extends Logger with Serializable {
 
     var cnt = checkpointEvery
 
-    import OfflineSpark._
-
     def update(batch: RDD[Rating[QI, PI]]) = synchronized {
       cnt -= 1
       val checkpointCurrent = cnt <= 0
@@ -392,7 +390,7 @@ extends Logger with Serializable {
       }
 
       val (userUpdates, itemUpdates) =
-        offlineDSGDUpdatesOnly[QI, PI](batch, Q.get, P.get,
+        OfflineSpark.offlineDSGDUpdatesOnly[QI, PI](batch, Q.get, P.get,
           factorInitializerForQI, factorInitializerForPI, factorUpdate,
           spark.defaultParallelism, _.hashCode(), 1)
 
