@@ -117,6 +117,11 @@ extends Logger with Serializable {
             (null, bucket)
         }
         .cache()
+
+      if (L.isEmpty()) {
+        logWarning("Rank snapshot is empty! Probably filtered out?")
+      }
+
       _snapshotsComputed += 1
     } else {
       snapshotFrequencyCounter -= 1
