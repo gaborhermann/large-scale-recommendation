@@ -54,6 +54,7 @@ extends Logger with Serializable {
   def rankSnapshot(rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])])
   : RDD[(Null, List[Online.Bucket.Entry[PI]])] = {
     if (snapshotFrequencyCounter == 0) {
+      logInfo("Updating rank snapshot.")
       snapshotFrequencyCounter = rankSnapshotFrequency
       L.unpersist()
       L = P.get
