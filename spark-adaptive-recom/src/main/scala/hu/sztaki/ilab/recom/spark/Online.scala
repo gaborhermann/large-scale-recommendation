@@ -60,7 +60,7 @@ extends Logger with Serializable {
       L = P.get
         .join(allowedProbes())
         .map(joined => joined._1 -> joined._2._1)
-        .repartition(nPartitions)
+        .repartition(spark.defaultParallelism)
         .map {
           case (i, p) =>
             logDebug(s"Calculating length and normalizing probe vector.")
@@ -268,7 +268,7 @@ extends Logger with Serializable {
         val (userUpdates, itemUpdates) =
           offlineDSGDUpdatesOnly(batch, Q.get, P.get,
             factorInitializerForQI, factorInitializerForPI, factorUpdate,
-            spark.defaultParallelism, _.hashCode(), 1)
+            nPartitions, _.hashCode(), 1)
 
         def applyUpdatesAndCheckpointOrCache[I: ClassTag](
           oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
@@ -315,7 +315,7 @@ extends Logger with Serializable {
               spark.makeRDD(Seq.empty[FactorVector[QI]]),
               spark.makeRDD(Seq.empty[FactorVector[PI]]),
               factorInitializerForQI, factorInitializerForPI, factorUpdate,
-              spark.defaultParallelism, _.hashCode(), numberOfIterations)
+              nPartitions, _.hashCode(), numberOfIterations)
           /*
         case "ALS" =>
           val model = ALS.train(ratingsHistory.get.map {
@@ -392,7 +392,7 @@ extends Logger with Serializable {
       val (userUpdates, itemUpdates) =
         OfflineSpark.offlineDSGDUpdatesOnly[QI, PI](batch, Q.get, P.get,
           factorInitializerForQI, factorInitializerForPI, factorUpdate,
-          spark.defaultParallelism, _.hashCode(), 1)
+          nPartitions, _.hashCode(), 1)
 
       def applyUpdatesAndCheckpointOrCache[I: ClassTag](
         oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
