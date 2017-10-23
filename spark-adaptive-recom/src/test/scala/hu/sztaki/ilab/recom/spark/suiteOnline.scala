@@ -1,6 +1,7 @@
 package hu.sztaki.ilab.recom.spark
 
 import hu.sztaki.ilab.recom.core.{PseudoRandomFactorInitializerDescriptor, Rating, SGDUpdater}
+import hu.sztaki.ilab.recom.spark.SparkExample.data
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -50,7 +51,7 @@ class suiteOnline extends FunSuite with Matchers with Logging {
     Thread.sleep(30000)
 
     val user = 100
-    val items = model ? (List(user), (i: Iterator[(Int, Array[Double])]) => i, 5, 0.001)
+    val items = model ? (List(user), sc.makeRDD(data.map(_._2)).map(_ -> true), 5, 0.001)
     items.flatMap {
       _._2
     }.foreach {
@@ -101,11 +102,7 @@ class suiteOnline extends FunSuite with Matchers with Logging {
       queryQueue,
       oneAtATime = true
     ).cache()
-    val filter: Iterator[(String, Array[Double])] => Iterator[(String, Array[Double])] = {
-      _.filter {
-        p => p._1.toInt > 10
-      }
-    }
+    val filter = sc.makeRDD(data.map(_._2).distinct).map(_ -> true).filter(p => p._1.toInt > 20)
 
     queries.print()
     (model ? (queries, filter, 5, 0.001))

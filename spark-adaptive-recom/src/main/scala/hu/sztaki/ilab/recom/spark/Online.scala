@@ -34,7 +34,7 @@ extends Logger with Serializable {
   def probeVectors = P
 
   def ?(queries: DStream[QI],
-        rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])],
+        allowedProbes: RDD[(PI, Boolean)],
         k: Int = 10,
         threshold: Double = 0.5): DStream[(QI, Seq[(PI, Double)])] = {
     queries.transform {
@@ -42,25 +42,24 @@ extends Logger with Serializable {
         val effectiveQ = Q.get.join(
           dd.map(q => (q, null))
         ).map(q => (q._1, q._2._1))
-        this ? (effectiveQ, rankFilter, k, threshold)
+        this ? (effectiveQ, allowedProbes, k, threshold)
     }
   }
 
-  def ?(query: List[QI], rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])],
+  def ?(query: List[QI], allowedProbes: RDD[(PI, Boolean)],
         k: Int, threshold: Double): Array[(QI, Seq[(PI, Double)])] = {
-    this ? (Q.get.filter(q => query.contains(q._1)).cache(), rankFilter, k, threshold)
+    this ? (Q.get.filter(q => query.contains(q._1)).cache(), allowedProbes, k, threshold)
   }.collect()
 
-  def rankSnapshot(rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])])
+  def rankSnapshot(allowedProbes: RDD[(PI, Boolean)])
   : RDD[(Null, List[Online.Bucket.Entry[PI]])] = {
     if (snapshotFrequencyCounter == 0) {
       logInfo("Updating rank snapshot.")
       snapshotFrequencyCounter = rankSnapshotFrequency
       L.unpersist()
       L = P.get
-        .mapPartitions {
-          rankFilter
-        }
+        .join(allowedProbes)
+        .map(joined => joined._1 -> joined._2._1)
         .repartition(nPartitions)
         .map {
           case (i, p) =>
@@ -131,9 +130,9 @@ extends Logger with Serializable {
   }
 
   protected def ?(snapshotQ: RDD[(QI, Array[Double])],
-                  rankFilter: Iterator[(PI, Array[Double])] => Iterator[(PI, Array[Double])],
+                  allowedProbes: RDD[(PI, Boolean)],
                   k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = synchronized {
-    rankSnapshot(rankFilter)
+    rankSnapshot(allowedProbes)
       .join(snapshotQ.map((null, _)))
       /**
         * Compute local threshold.
