@@ -1,7 +1,6 @@
 package hu.sztaki.ilab.recom.spark
 
 import hu.sztaki.ilab.recom.core.{PseudoRandomFactorInitializerDescriptor, Rating, SGDUpdater}
-import hu.sztaki.ilab.recom.spark.SparkExample.data
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD

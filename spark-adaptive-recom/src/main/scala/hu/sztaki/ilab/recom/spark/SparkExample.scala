@@ -52,7 +52,7 @@ object SparkExample {
     Thread.sleep(30000)
 
     val user = data(util.Random.nextInt(data.size))
-    val items = model ? (List(user).map(_._1), sc.makeRDD(data.map(_._2).distinct).map(_ -> true), 5, 0.001)
+    val items = model ? (List(user).map(_._1), () => sc.makeRDD(data.map(_._2).distinct).map(_ -> true), 5, 0.001)
     items.flatMap {
         _._2
     }.foreach {
