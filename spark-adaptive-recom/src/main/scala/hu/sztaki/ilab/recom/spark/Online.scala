@@ -34,7 +34,7 @@ extends Logger with Serializable {
   def probeVectors = P
 
   def ?(queries: DStream[QI],
-        allowedProbes: RDD[(PI, Boolean)],
+        allowedProbes: () => RDD[(PI, Boolean)],
         k: Int = 10,
         threshold: Double = 0.5): DStream[(QI, Seq[(PI, Double)])] = {
     queries.transform {
@@ -46,19 +46,19 @@ extends Logger with Serializable {
     }
   }
 
-  def ?(query: List[QI], allowedProbes: RDD[(PI, Boolean)],
+  def ?(query: List[QI], allowedProbes: () => RDD[(PI, Boolean)],
         k: Int, threshold: Double): Array[(QI, Seq[(PI, Double)])] = {
     this ? (Q.get.filter(q => query.contains(q._1)).cache(), allowedProbes, k, threshold)
   }.collect()
 
-  def rankSnapshot(allowedProbes: RDD[(PI, Boolean)])
+  def rankSnapshot(allowedProbes: () => RDD[(PI, Boolean)])
   : RDD[(Null, List[Online.Bucket.Entry[PI]])] = {
     if (snapshotFrequencyCounter == 0) {
       logInfo("Updating rank snapshot.")
       snapshotFrequencyCounter = rankSnapshotFrequency
       L.unpersist()
       L = P.get
-        .join(allowedProbes)
+        .join(allowedProbes())
         .map(joined => joined._1 -> joined._2._1)
         .repartition(nPartitions)
         .map {
@@ -130,7 +130,7 @@ extends Logger with Serializable {
   }
 
   protected def ?(snapshotQ: RDD[(QI, Array[Double])],
-                  allowedProbes: RDD[(PI, Boolean)],
+                  allowedProbes: () => RDD[(PI, Boolean)],
                   k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = synchronized {
     rankSnapshot(allowedProbes)
       .join(snapshotQ.map((null, _)))
