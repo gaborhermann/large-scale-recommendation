@@ -285,7 +285,7 @@ extends Logger with Serializable {
 
           // checkpoint or cache
           val nextRDD = if (checkpointCurrent) {
-            val persisted = rdd.persist(StorageLevel.DISK_ONLY)
+            val persisted = rdd.cache()
             persisted.checkpoint()
             LocallyCheckpointedRDD(persisted)
           } else {
@@ -407,7 +407,7 @@ extends Logger with Serializable {
 
         // checkpoint or cache
         val nextRDD = if (checkpointCurrent) {
-          val persisted = rdd.persist(StorageLevel.DISK_ONLY)
+          val persisted = rdd.cache()
           persisted.checkpoint()
           LocallyCheckpointedRDD(persisted)
         } else {
