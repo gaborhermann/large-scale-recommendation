@@ -15,7 +15,8 @@ class Online[QI: ClassTag, PI: ClassTag](
   bucketLowerBound: Int = 50,
   bucketUpperBound: Int = 1000,
   nPartitions: Int = 20,
-  rankSnapshotFrequency: Int = 30)
+  rankSnapshotFrequency: Int = 30,
+  checkpointEvery: Int = 60)
 extends Logger with Serializable {
   case class UserVectorUpdate(ID: QI, vec: Array[Double])
   case class ItemVectorUpdate(ID: PI, vec: Array[Double])
@@ -25,6 +26,8 @@ extends Logger with Serializable {
   @transient protected val spark = cold.context
   @transient protected var L: RDD[(Null, List[Online.Bucket.Entry[PI]])] =
     spark.emptyRDD[(Null, List[Online.Bucket.Entry[PI]])]
+
+  protected var checkpointCounter = checkpointEvery
 
   protected var snapshotFrequencyCounter: Int = rankSnapshotFrequency
   protected var _snapshotsComputed: Int = 0
@@ -285,7 +288,8 @@ extends Logger with Serializable {
 
           // checkpoint or cache
           val nextRDD = if (checkpointCurrent) {
-            val persisted = rdd.persist(StorageLevel.DISK_ONLY).localCheckpoint()
+            val persisted = rdd.cache()
+            persisted.checkpoint()
             LocallyCheckpointedRDD(persisted)
           } else {
             NotCheckpointedRDD(rdd.cache())
@@ -365,11 +369,63 @@ extends Logger with Serializable {
     updates
   }
 
+  protected def update(batch: RDD[Rating[QI, PI]],
+             factorInitializerForQI: FactorInitializerDescriptor[QI],
+             factorInitializerForPI: FactorInitializerDescriptor[PI],
+             factorUpdate: FactorUpdater) = {
+    checkpointCounter -= 1
+    val checkpointCurrent = checkpointCounter <= 0
+    if (checkpointCurrent) {
+      checkpointCounter = checkpointEvery
+    }
+
+    val (userUpdates, itemUpdates) =
+      OfflineSpark.offlineDSGDUpdatesOnly[QI, PI](batch, Q.get, P.get,
+        factorInitializerForQI, factorInitializerForPI, factorUpdate,
+        nPartitions, _.hashCode(), 1)
+
+    Q = applyUpdatesAndCheckpointOrCache(Q, userUpdates, checkpointCurrent)
+    P = applyUpdatesAndCheckpointOrCache(P, itemUpdates, checkpointCurrent)
+
+    // user updates are marked with true, while item updates with false
+    userUpdates.map[Either[Vector[QI], Vector[PI]]](Left(_)).union(itemUpdates.map(Right(_)))
+  }
+
+  def applyUpdatesAndCheckpointOrCache[I: ClassTag](
+    oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
+    updates: RDD[(I, Array[Double])],
+    checkpointCurrent: Boolean):
+  PossiblyCheckpointedRDD[(I, Array[Double])] = {
+    // merging old values with updates
+    val rdd = oldRDD.get.fullOuterJoin(updates)
+      .map {
+        case (id: I, (oldOpt: Option[Array[Double]], updatedOpt: Option[Array[Double]])) =>
+          (id, updatedOpt.getOrElse(oldOpt.get))
+      }
+
+    // checkpoint or cache
+    val nextRDD = if (checkpointCurrent) {
+      val persisted = rdd.cache()
+      persisted.checkpoint()
+      LocallyCheckpointedRDD(persisted)
+    } else {
+      NotCheckpointedRDD(rdd.cache())
+    }
+
+    // clear old values if not checkpointed
+    oldRDD match {
+      case NotCheckpointedRDD(x) => x.unpersist()
+      case _ => ()
+    }
+    updates.unpersist()
+
+    nextRDD
+  }
+
   def buildModelWithMap(ratings: DStream[Rating[QI, PI]],
                         factorInitializerForQI: FactorInitializerDescriptor[QI],
                         factorInitializerForPI: FactorInitializerDescriptor[PI],
-                        factorUpdate: FactorUpdater,
-                        checkpointEvery: Int)
+                        factorUpdate: FactorUpdater)
   : DStream[Either[Vector[QI], Vector[PI]]] = {
     @transient val users0: PossiblyCheckpointedRDD[Vector[QI]] =
       NotCheckpointedRDD(spark.makeRDD(Seq.empty[Vector[QI]]))
@@ -379,60 +435,12 @@ extends Logger with Serializable {
     Q = users0
     P = items0
 
-    var cnt = checkpointEvery
-
-    def update(batch: RDD[Rating[QI, PI]]) = synchronized {
-      cnt -= 1
-      val checkpointCurrent = cnt <= 0
-      if (checkpointCurrent) {
-        cnt = checkpointEvery
-      }
-
-      val (userUpdates, itemUpdates) =
-        OfflineSpark.offlineDSGDUpdatesOnly[QI, PI](batch, Q.get, P.get,
-          factorInitializerForQI, factorInitializerForPI, factorUpdate,
-          nPartitions, _.hashCode(), 1)
-
-      def applyUpdatesAndCheckpointOrCache[I: ClassTag](
-        oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
-        updates: RDD[(I, Array[Double])]):
-      PossiblyCheckpointedRDD[(I, Array[Double])] = {
-        // merging old values with updates
-        val rdd = oldRDD.get.fullOuterJoin(updates)
-          .map {
-            case (id: I, (oldOpt: Option[Array[Double]], updatedOpt: Option[Array[Double]])) =>
-              (id, updatedOpt.getOrElse(oldOpt.get))
-          }
-
-        // checkpoint or cache
-        val nextRDD = if (checkpointCurrent) {
-          val persisted = rdd.persist(StorageLevel.DISK_ONLY).localCheckpoint()
-          LocallyCheckpointedRDD(persisted)
-        } else {
-          NotCheckpointedRDD(rdd.cache())
-        }
-
-        // clear old values if not checkpointed
-        oldRDD match {
-          case NotCheckpointedRDD(x) => x.unpersist()
-          case _ => ()
-        }
-        updates.unpersist()
-
-        nextRDD
-      }
-
-      Q = applyUpdatesAndCheckpointOrCache(Q, userUpdates)
-      P = applyUpdatesAndCheckpointOrCache(P, itemUpdates)
-
-      // user updates are marked with true, while item updates with false
-      userUpdates.map[Either[Vector[QI], Vector[PI]]](Left(_)).union(itemUpdates.map(Right(_)))
-    }
-
     logInfo("Reading cold data.")
-    update(cold)
+    update(cold, factorInitializerForQI, factorInitializerForPI, factorUpdate)
 
-    val updates = ratings.transform { update(_) }
+    val updates = ratings.transform { r =>
+      update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
+    }
 
     updates
   }

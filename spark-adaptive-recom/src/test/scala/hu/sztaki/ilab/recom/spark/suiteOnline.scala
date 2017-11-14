@@ -41,7 +41,7 @@ class suiteOnline extends FunSuite with Matchers with Logging {
 
     val updatedVectors =
       model.buildModelWithMap(
-        ratings, factorInit, factorInit, factorUpdate, checkpointEvery)
+        ratings, factorInit, factorInit, factorUpdate)
 
     updatedVectors.foreachRDD(_.foreach(println))
 
@@ -92,7 +92,7 @@ class suiteOnline extends FunSuite with Matchers with Logging {
 
     val updatedVectors =
       model.buildModelWithMap(
-        ratings, factorInit, factorInit, factorUpdate, checkpointEvery)
+        ratings, factorInit, factorInit, factorUpdate)
 
     updatedVectors.print()
 
