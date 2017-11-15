@@ -26,6 +26,8 @@ extends Logger with Serializable {
   @transient protected val spark = cold.context
   @transient protected var L: RDD[(Null, List[Online.Bucket.Entry[PI]])] =
     spark.emptyRDD[(Null, List[Online.Bucket.Entry[PI]])]
+  @transient protected var lastCheckpointedQ: Option[LocallyCheckpointedRDD[Vector[QI]]] = None
+  @transient protected var lastCheckpointedP: Option[LocallyCheckpointedRDD[Vector[PI]]] = None
 
   protected var checkpointCounter = checkpointEvery
 
@@ -383,8 +385,16 @@ extends Logger with Serializable {
         factorInitializerForQI, factorInitializerForPI, factorUpdate,
         nPartitions, _.hashCode(), 1)
 
-    Q = applyUpdatesAndCheckpointOrCache(Q, userUpdates, checkpointCurrent)
-    P = applyUpdatesAndCheckpointOrCache(P, itemUpdates, checkpointCurrent)
+    Q = applyUpdatesAndCheckpointOrCache(Q, userUpdates, checkpointCurrent, lastCheckpointedQ, {
+      (rdd: LocallyCheckpointedRDD[Vector[QI]]) => {
+        lastCheckpointedQ = Some(rdd)
+      }
+    })
+    P = applyUpdatesAndCheckpointOrCache(P, itemUpdates, checkpointCurrent, lastCheckpointedP, {
+      (rdd: LocallyCheckpointedRDD[Vector[PI]]) => {
+        lastCheckpointedP = Some(rdd)
+      }
+    })
 
     // user updates are marked with true, while item updates with false
     userUpdates.map[Either[Vector[QI], Vector[PI]]](Left(_)).union(itemUpdates.map(Right(_)))
@@ -393,7 +403,9 @@ extends Logger with Serializable {
   def applyUpdatesAndCheckpointOrCache[I: ClassTag](
     oldRDD: PossiblyCheckpointedRDD[(I, Array[Double])],
     updates: RDD[(I, Array[Double])],
-    checkpointCurrent: Boolean):
+    checkpointCurrent: Boolean,
+    lastCheckpointed: Option[LocallyCheckpointedRDD[(I, Array[Double])]] = None,
+    updateCheckpointed: LocallyCheckpointedRDD[(I, Array[Double])] => Unit):
   PossiblyCheckpointedRDD[(I, Array[Double])] = {
     // merging old values with updates
     val rdd = oldRDD.get.fullOuterJoin(updates)
@@ -404,8 +416,11 @@ extends Logger with Serializable {
 
     // checkpoint or cache
     val nextRDD = if (checkpointCurrent) {
+      lastCheckpointed.map(_.get.unpersist())
       val persisted = rdd.persist(StorageLevel.DISK_ONLY_2).localCheckpoint()
-      LocallyCheckpointedRDD(persisted)
+      val locallyCheckpointed = LocallyCheckpointedRDD(persisted)
+      updateCheckpointed(locallyCheckpointed)
+      locallyCheckpointed
     } else {
       NotCheckpointedRDD(rdd.cache())
     }
