@@ -57,7 +57,7 @@ extends Logger with Serializable {
   }.collect()
 
   def rankSnapshot(allowedProbes: () => RDD[(PI, Boolean)])
-  : RDD[(Null, List[Online.Bucket.Entry[PI]])] = {
+  : RDD[(Null, List[Online.Bucket.Entry[PI]])] = synchronized {
     if (snapshotFrequencyCounter == 0) {
       logInfo("Updating rank snapshot.")
       snapshotFrequencyCounter = rankSnapshotFrequency
@@ -373,7 +373,7 @@ extends Logger with Serializable {
   protected def update(batch: RDD[Rating[QI, PI]],
              factorInitializerForQI: FactorInitializerDescriptor[QI],
              factorInitializerForPI: FactorInitializerDescriptor[PI],
-             factorUpdate: FactorUpdater) = {
+             factorUpdate: FactorUpdater) = synchronized {
     checkpointCounter -= 1
     val checkpointCurrent = checkpointCounter <= 0
     if (checkpointCurrent) {
@@ -406,7 +406,7 @@ extends Logger with Serializable {
     checkpointCurrent: Boolean,
     lastCheckpointed: Option[LocallyCheckpointedRDD[(I, Array[Double])]] = None,
     updateCheckpointed: LocallyCheckpointedRDD[(I, Array[Double])] => Unit):
-  PossiblyCheckpointedRDD[(I, Array[Double])] = {
+  PossiblyCheckpointedRDD[(I, Array[Double])] = synchronized {
     // merging old values with updates
     val rdd = oldRDD.get.fullOuterJoin(updates)
       .map {
