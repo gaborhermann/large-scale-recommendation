@@ -123,10 +123,6 @@ extends Logger with Serializable {
         }
         .cache()
 
-      if (L.isEmpty()) {
-        logWarning("Rank snapshot is empty! Probably filtered out?")
-      }
-
       _snapshotsComputed += 1
     } else {
       snapshotFrequencyCounter -= 1
@@ -371,9 +367,9 @@ extends Logger with Serializable {
   }
 
   protected def update(batch: RDD[Rating[QI, PI]],
-             factorInitializerForQI: FactorInitializerDescriptor[QI],
-             factorInitializerForPI: FactorInitializerDescriptor[PI],
-             factorUpdate: FactorUpdater) = synchronized {
+                       factorInitializerForQI: FactorInitializerDescriptor[QI],
+                       factorInitializerForPI: FactorInitializerDescriptor[PI],
+                       factorUpdate: FactorUpdater) = synchronized {
     checkpointCounter -= 1
     val checkpointCurrent = checkpointCounter <= 0
     if (checkpointCurrent) {
@@ -397,7 +393,11 @@ extends Logger with Serializable {
     })
 
     // user updates are marked with true, while item updates with false
-    userUpdates.map[Either[Vector[QI], Vector[PI]]](Left(_)).union(itemUpdates.map(Right(_)))
+    val updates = userUpdates.map[Either[Vector[QI], Vector[PI]]](Left(_)).union(itemUpdates.map(Right(_)))
+    // updates are persisted by OfflineSpark.offlineDSGDUpdatesOnly
+    userUpdates.unpersist()
+    itemUpdates.unpersist()
+    updates
   }
 
   def applyUpdatesAndCheckpointOrCache[I: ClassTag](
@@ -438,8 +438,7 @@ extends Logger with Serializable {
   def buildModelWithMap(ratings: DStream[Rating[QI, PI]],
                         factorInitializerForQI: FactorInitializerDescriptor[QI],
                         factorInitializerForPI: FactorInitializerDescriptor[PI],
-                        factorUpdate: FactorUpdater)
-  : DStream[Either[Vector[QI], Vector[PI]]] = {
+                        factorUpdate: FactorUpdater) = {
     @transient val users0: PossiblyCheckpointedRDD[Vector[QI]] =
       NotCheckpointedRDD(spark.makeRDD(Seq.empty[Vector[QI]]))
     @transient val items0: PossiblyCheckpointedRDD[Vector[PI]] =
@@ -451,11 +450,10 @@ extends Logger with Serializable {
     logInfo("Reading cold data.")
     update(cold, factorInitializerForQI, factorInitializerForPI, factorUpdate)
 
-    val updates = ratings.transform { r =>
+    ratings.foreachRDD { r =>
       update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
+        .count() // trigger
     }
-
-    updates
   }
 }
 

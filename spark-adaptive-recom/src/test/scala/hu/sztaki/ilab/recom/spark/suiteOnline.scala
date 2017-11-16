@@ -39,11 +39,8 @@ class suiteOnline extends FunSuite with Matchers with Logging {
 
     val model = new Online[Int, Int](coldData.map(r => Rating.fromTuple[Int, Int](r)))()
 
-    val updatedVectors =
-      model.buildModelWithMap(
-        ratings, factorInit, factorInit, factorUpdate)
-
-    updatedVectors.foreachRDD(_.foreach(println))
+    model.buildModelWithMap(
+      ratings, factorInit, factorInit, factorUpdate)
 
     ssc.start()
 
@@ -90,11 +87,8 @@ class suiteOnline extends FunSuite with Matchers with Logging {
       coldData.map(r => Rating.fromTuple[String, String](r)).repartition(5)
     )()
 
-    val updatedVectors =
-      model.buildModelWithMap(
-        ratings, factorInit, factorInit, factorUpdate)
-
-    updatedVectors.print()
+    model.buildModelWithMap(
+      ratings, factorInit, factorInit, factorUpdate)
 
     val queryQueue = mutable.Queue[RDD[String]]()
     val queries = ssc.queueStream(

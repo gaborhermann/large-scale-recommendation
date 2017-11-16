@@ -35,17 +35,14 @@ object SparkExample {
 
     val model = new Online[Int, Int](batch1.map(Rating.fromTuple))()
 
-    val updatedVectors =
-      if (offlineEvery == -1) {
-        model.buildModelWithMap(
-          ratings, factorInit, factorInit, factorUpdate)
-      } else {
-        model.buildModelCombineOffline(
-          ratings, factorInit, factorInit, factorUpdate, Map(), checkpointEvery,
-          offlineEvery, 10, offlineAlgorithm, numFactors)
-      }
-
-    updatedVectors.foreachRDD(_.foreach(println))
+    if (offlineEvery == -1) {
+      model.buildModelWithMap(
+        ratings, factorInit, factorInit, factorUpdate)
+    } else {
+      model.buildModelCombineOffline(
+        ratings, factorInit, factorInit, factorUpdate, Map(), checkpointEvery,
+        offlineEvery, 10, offlineAlgorithm, numFactors)
+    }
 
     ssc.start()
 

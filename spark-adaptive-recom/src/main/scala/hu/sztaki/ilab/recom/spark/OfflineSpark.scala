@@ -156,7 +156,6 @@ object OfflineSpark {
     implicit classTagPI: ClassTag[QIMap],
              classTagQI: ClassTag[PIMap]):
   (RDD[(Int, QIMap)], RDD[(Int, PIMap)]) = {
-
     def shiftedPartitioner(shift: Int) = ShiftedIntHasher(numPartitions, hash, shift)
 
     val hashPartitioner = shiftedPartitioner(0)
@@ -165,20 +164,21 @@ object OfflineSpark {
     // WARNING! cache()/unpersist() has semantic difference here because we use mutable HashMaps.
     // ------------------------------
 
-    val ratingsByUser =
-      ratings.keyBy[QI](_.user).partitionBy(hashPartitioner)
-        .mapPartitions(ratingIterByUser => {
-          type RatingBlock = ArrayBuffer[Rating[QI, PI]]
-          val blocksByItems: Array[RatingBlock] = Array.fill(numPartitions)(new ArrayBuffer[Rating[QI, PI]]())
+    val ratingsByUser = ratings
+      .keyBy[QI](_.user)
+      .partitionBy(hashPartitioner)
+      .mapPartitions(ratingIterByUser => {
+        type RatingBlock = ArrayBuffer[Rating[QI, PI]]
+        val blocksByItems: Array[RatingBlock] = Array.fill(numPartitions)(new ArrayBuffer[Rating[QI, PI]]())
 
-          ratingIterByUser.map(_._2).foreach {
-            case rating@Rating(u, i, r) =>
-              blocksByItems(Math.abs(i.hashCode()) % numPartitions).append(rating)
-          }
+        ratingIterByUser.map(_._2).foreach {
+          case rating@Rating(u, i, r) =>
+            blocksByItems(Math.abs(i.hashCode()) % numPartitions).append(rating)
+        }
 
-          Iterator(blocksByItems.map(_.toArray))
-        }, preservesPartitioning = true)
-        .cache()
+        Iterator(blocksByItems.map(_.toArray))
+      }, preservesPartitioning = true)
+      .cache()
 
     def partitionToHashMaps[I: ClassTag, IMap <: mutable.Map[I, Array[Double]]](
       rdd: RDD[(I, Array[Double])],
