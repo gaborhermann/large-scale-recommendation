@@ -454,8 +454,11 @@ extends Logger with Serializable {
 
     ratings.foreachRDD { r =>
       if (!r.isEmpty()) {
+        logInfo("Ratings are not empty.")
         update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
           .count() // trigger
+      } else {
+        logInfo("No ratings arrive this micro-bath.")
       }
     }
   }
