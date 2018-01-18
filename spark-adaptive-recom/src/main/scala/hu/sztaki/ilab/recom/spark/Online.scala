@@ -146,9 +146,9 @@ extends Logger with Serializable {
           val localThreshold = threshold / (bucketLength * queryLength)
           ((j, q, localThreshold), bucket)
       }
-        /**
-          * Prune buckets based on local threshold.
-          */
+      /**
+        * Prune buckets based on local threshold.
+        */
       .filter {
         case (((_, _, localThreshold), _)) =>
           localThreshold <= 1
@@ -453,13 +453,8 @@ extends Logger with Serializable {
     update(cold, factorInitializerForQI, factorInitializerForPI, factorUpdate)
 
     ratings.foreachRDD { r =>
-      if (!r.isEmpty()) {
-        logInfo("Ratings are not empty.")
-        update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
-          .count() // trigger
-      } else {
-        logInfo("No ratings arrive this micro-bath.")
-      }
+      update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
+        .count() // trigger
     }
   }
 }
