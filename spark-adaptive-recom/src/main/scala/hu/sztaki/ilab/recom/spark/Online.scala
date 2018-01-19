@@ -453,8 +453,13 @@ extends Logger with Serializable {
     update(cold, factorInitializerForQI, factorInitializerForPI, factorUpdate)
 
     ratings.foreachRDD { r =>
-      update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
-        .foreachPartition(_ => null)
+      if (!r.isEmpty()) {
+        logInfo("Ratings are not empty.")
+        update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
+          .count() // trigger
+      } else {
+        logInfo("No ratings arrive this micro-bath.")
+      }
     }
   }
 }

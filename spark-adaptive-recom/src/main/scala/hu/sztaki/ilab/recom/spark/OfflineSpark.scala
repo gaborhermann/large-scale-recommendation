@@ -172,7 +172,7 @@ object OfflineSpark {
         val blocksByItems: Array[RatingBlock] = Array.fill(numPartitions)(new ArrayBuffer[Rating[QI, PI]]())
 
         ratingIterByUser.map(_._2).foreach {
-          case rating@Rating(u, i, r) =>
+          case rating@Rating(_, i, _) =>
             blocksByItems(Math.abs(i.hashCode()) % numPartitions).append(rating)
         }
 
