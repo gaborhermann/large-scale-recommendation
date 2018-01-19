@@ -454,7 +454,6 @@ extends Logger with Serializable {
 
     ratings.foreachRDD { r =>
       update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
-        .count() // trigger
     }
   }
 }
