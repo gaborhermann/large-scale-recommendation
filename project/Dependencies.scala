@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
   lazy val hadoopVersion = "2.8.0"
-  lazy val sparkVersion = "2.2.0"
+  lazy val sparkVersion = "2.2.1"
   lazy val flinkVersion = "1.3.0"
 
   lazy val commonDependencies = Seq(
@@ -21,8 +21,8 @@ object Dependencies {
   ).map(_.excludeAll(ExclusionRule("org.apache.hadoop"))) ++ hadoopDependencies
 
   lazy val sparkDependencies = Seq(
-    "org.apache.spark" %% "spark-streaming" % sparkVersion,
-    "org.apache.spark" %% "spark-mllib" % sparkVersion
+    "org.apache.spark" %% "spark-streaming" % sparkVersion % "provided",
+    "org.apache.spark" %% "spark-mllib" % sparkVersion % "provided"
   ).map(_.excludeAll(ExclusionRule("org.apache.hadoop"))) ++ hadoopDependencies
 
   lazy val hadoopDependencies = Seq(
