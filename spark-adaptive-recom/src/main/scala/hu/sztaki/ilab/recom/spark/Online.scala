@@ -452,13 +452,12 @@ extends Logger with Serializable {
     logInfo("Reading cold data.")
     update(cold, factorInitializerForQI, factorInitializerForPI, factorUpdate)
 
-    ratings.foreachRDD { r =>
+    val cachedRatings = ratings.cache()
+
+    cachedRatings.foreachRDD { r =>
       if (!r.isEmpty()) {
-        logInfo("Ratings are not empty.")
         update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
           .count() // trigger
-      } else {
-        logInfo("No ratings arrive this micro-bath.")
       }
     }
   }
