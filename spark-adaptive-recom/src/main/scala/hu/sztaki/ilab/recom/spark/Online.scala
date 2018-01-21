@@ -16,7 +16,8 @@ class Online[QI: ClassTag, PI: ClassTag](
   bucketUpperBound: Int = 1000,
   nPartitions: Int = 20,
   rankSnapshotFrequency: Int = 30,
-  checkpointEvery: Int = 60)
+  checkpointEvery: Int = 60,
+  parallelism: Int = 20)
 extends Logger with Serializable {
   case class UserVectorUpdate(ID: QI, vec: Array[Double])
   case class ItemVectorUpdate(ID: PI, vec: Array[Double])
@@ -57,7 +58,7 @@ extends Logger with Serializable {
   }.collect()
 
   def rankSnapshot(allowedProbes: () => RDD[(PI, Boolean)])
-  : RDD[(Null, List[Online.Bucket.Entry[PI]])] = synchronized {
+  : RDD[(Null, List[Online.Bucket.Entry[PI]])] = {
     if (snapshotFrequencyCounter == 0) {
       logInfo("Updating rank snapshot.")
       snapshotFrequencyCounter = rankSnapshotFrequency
@@ -132,7 +133,7 @@ extends Logger with Serializable {
 
   protected def ?(snapshotQ: RDD[(QI, Array[Double])],
                   allowedProbes: () => RDD[(PI, Boolean)],
-                  k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = synchronized {
+                  k: Int, threshold: Double): RDD[(QI, Seq[(PI, Double)])] = {
     rankSnapshot(allowedProbes)
       .join(snapshotQ.map((null, _)))
       /**
@@ -407,13 +408,13 @@ extends Logger with Serializable {
     checkpointCurrent: Boolean,
     lastCheckpointed: Option[LocallyCheckpointedRDD[(I, Array[Double])]] = None,
     updateCheckpointed: LocallyCheckpointedRDD[(I, Array[Double])] => Unit):
-  PossiblyCheckpointedRDD[(I, Array[Double])] = synchronized {
+  PossiblyCheckpointedRDD[(I, Array[Double])] = {
     // merging old values with updates
     val rdd = oldRDD.get.fullOuterJoin(updates)
       .map {
         case (id: I, (oldOpt: Option[Array[Double]], updatedOpt: Option[Array[Double]])) =>
           (id, updatedOpt.getOrElse(oldOpt.get))
-      }
+      }.repartition(parallelism)
 
     // checkpoint or cache
     val nextRDD = if (checkpointCurrent) {
