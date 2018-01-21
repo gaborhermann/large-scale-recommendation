@@ -17,7 +17,8 @@ class Online[QI: ClassTag, PI: ClassTag](
   nPartitions: Int = 20,
   rankSnapshotFrequency: Int = 30,
   checkpointEvery: Int = 60,
-  parallelism: Int = 20)
+  parallelism: Int = 20,
+  iterations: Int = 10)
 extends Logger with Serializable {
   case class UserVectorUpdate(ID: QI, vec: Array[Double])
   case class ItemVectorUpdate(ID: PI, vec: Array[Double])
@@ -66,11 +67,12 @@ extends Logger with Serializable {
       L = P.get
         .join(allowedProbes())
         .map(joined => joined._1 -> joined._2._1)
-        .repartition(spark.defaultParallelism)
+        .repartition(nPartitions)
         .map {
           case (i, p) =>
             logDebug(s"Calculating length and normalizing probe vector.")
-            val length: Double = Math.sqrt(p.map(v => Math.pow(v, v)).sum)
+            val length: Double = Math.sqrt(p.map(v => Math.pow(v, 2)).sum)
+
             val normalized = p.map(_ / length)
             (i, p, length, normalized)
         }
@@ -90,6 +92,7 @@ extends Logger with Serializable {
                   if (iterator.hasNext) {
                     val first = iterator.next
                     val maximal = first._3
+                    logDebug(s"Maximal element is [$maximal].")
                     var nElements = 1
                     val bucket = Some(
                       (List(first) ++ iterator.takeWhile {
@@ -109,7 +112,7 @@ extends Logger with Serializable {
                     logDebug(s"Created bucket with size [$nElements].")
                     bucket
                   } else {
-                    logWarning(s"Partition seems to be empty!")
+                    logWarning(s"Partition seems to be empty after cutting!")
                     None
                   }
               }.iterator
@@ -143,7 +146,7 @@ extends Logger with Serializable {
         case (_, (bucket: List[Bucket.Entry[PI]], (j, q))) =>
           val bucketLength = bucket.head.length
           logDebug(s"Computing local threshold for bucket with length [$bucketLength].")
-          val queryLength: Length = Math.sqrt(q.map(v => Math.pow(v, v)).sum)
+          val queryLength: Length = Math.sqrt(q.map(v => Math.pow(v, 2)).sum)
           val localThreshold = threshold / (bucketLength * queryLength)
           ((j, q, localThreshold), bucket)
       }
@@ -381,7 +384,7 @@ extends Logger with Serializable {
     val (userUpdates, itemUpdates) =
       OfflineSpark.offlineDSGDUpdatesOnly[QI, PI](batch, Q.get, P.get,
         factorInitializerForQI, factorInitializerForPI, factorUpdate,
-        nPartitions, _.hashCode(), 1)
+        nPartitions, _.hashCode(), iterations)
 
     Q = applyUpdatesAndCheckpointOrCache(Q, userUpdates, checkpointCurrent, lastCheckpointedQ, {
       (rdd: LocallyCheckpointedRDD[Vector[QI]]) => {
