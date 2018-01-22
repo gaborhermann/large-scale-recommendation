@@ -454,7 +454,7 @@ extends Logger with Serializable {
     P = items0
 
     logInfo("Reading cold data.")
-    update(cold, factorInitializerForQI, factorInitializerForPI, factorUpdate)
+    update(cold.repartition(parallelism), factorInitializerForQI, factorInitializerForPI, factorUpdate)
 
     val cachedRatings = ratings.cache()
 
