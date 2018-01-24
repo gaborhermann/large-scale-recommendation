@@ -128,7 +128,7 @@ extends Logger with Serializable {
         }
         .persist(StorageLevel.MEMORY_ONLY_2)
 
-      L.localCheckpoint()
+      L.checkpoint()
 
       _snapshotsComputed += 1
     } else {
