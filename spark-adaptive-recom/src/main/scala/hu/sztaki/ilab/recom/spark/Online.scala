@@ -23,11 +23,12 @@ extends Logger with Serializable {
   case class UserVectorUpdate(ID: QI, vec: Array[Double])
   case class ItemVectorUpdate(ID: PI, vec: Array[Double])
 
+  @transient protected val spark = cold.context
   @transient protected var Q: PossiblyCheckpointedRDD[Vector[QI]] = _
   @transient protected var P: PossiblyCheckpointedRDD[Vector[PI]] = _
-  @transient protected val spark = cold.context
   @transient protected var L: RDD[(Null, List[Online.Bucket.Entry[PI]])] =
     spark.emptyRDD[(Null, List[Online.Bucket.Entry[PI]])]
+
   @transient protected var lastCheckpointedQ: Option[LocallyCheckpointedRDD[Vector[QI]]] = None
   @transient protected var lastCheckpointedP: Option[LocallyCheckpointedRDD[Vector[PI]]] = None
 
@@ -125,7 +126,9 @@ extends Logger with Serializable {
           bucket =>
             (null, bucket)
         }
-        .cache()
+        .persist(StorageLevel.MEMORY_ONLY_2)
+
+      L.localCheckpoint()
 
       _snapshotsComputed += 1
     } else {
@@ -462,6 +465,17 @@ extends Logger with Serializable {
       if (!r.isEmpty()) {
         update(r, factorInitializerForQI, factorInitializerForPI, factorUpdate)
           .count() // trigger
+
+        spark.getPersistentRDDs.foreach {
+          case (_, rdd) =>
+            /**
+              * There is no way to unpersist any RDD during the computation of `update`,
+              * as no action has been called until now.
+              */
+            if (Q.get.id != rdd.id && P.get.id != rdd.id && L.id != rdd.id) {
+              rdd.unpersist()
+            }
+        }
       }
     }
   }
